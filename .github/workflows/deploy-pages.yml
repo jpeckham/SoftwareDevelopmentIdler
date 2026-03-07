@@ -1,0 +1,162 @@
+name: Deploy Blazor PWA to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SoftwareVSMSimulator.sln
+
+      - name: Test
+        run: dotnet test Tests/SoftwareVSM.Tests.csproj --configuration Release --verbosity minimal
+
+      - name: Publish Client
+        run: dotnet publish Client/SoftwareVSM.Client.csproj -c Release -o publish
+
+      - name: Configure GitHub Pages Base Path
+        shell: pwsh
+        run: |
+          $site = Join-Path $PWD 'publish/wwwroot'
+          $repo = '${{ github.event.repository.name }}'
+          $index = Join-Path $site 'index.html'
+          $content = Get-Content $index -Raw
+          $baseHref = '<base href="/{0}/" />' -f $repo
+          $content = $content -replace '<base href="/" />', $baseHref
+          Set-Content $index $content
+          Copy-Item $index (Join-Path $site '404.html') -Force
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish/wwwroot
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute Next SemVer Tag
+        id: semver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f version.json ]; then
+            echo "version.json is missing" >&2
+            exit 1
+          fi
+
+          major=$(jq -r '.major // empty' version.json)
+          minor=$(jq -r '.minor // empty' version.json)
+          if [ -z "${major}" ] || [ -z "${minor}" ]; then
+            echo "version.json must contain major and minor integers" >&2
+            exit 1
+          fi
+
+          git fetch --tags --force
+          latest=$(git tag -l "v${major}.${minor}.*" --sort=-v:refname | head -n 1 || true)
+          if [ -z "${latest}" ]; then
+            patch=0
+            previous=""
+          else
+            patch=$(( ${latest##*.} + 1 ))
+            previous="${latest}"
+          fi
+
+          next_tag="v${major}.${minor}.${patch}"
+          if git rev-parse "${next_tag}" >/dev/null 2>&1; then
+            echo "Tag already exists: ${next_tag}" >&2
+            exit 1
+          fi
+
+          echo "next_tag=${next_tag}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${previous}" >> "$GITHUB_OUTPUT"
+          echo "Computed next version: ${next_tag}"
+
+      - name: Create and Push Tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          next_tag="${{ steps.semver.outputs.next_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${next_tag}"
+          git push origin "${next_tag}"
+
+      - name: Generate Release Notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="${{ steps.semver.outputs.previous_tag }}"
+          next_tag="${{ steps.semver.outputs.next_tag }}"
+          {
+            echo "## ${next_tag}"
+            echo
+            echo "### Changes"
+          } > release-notes.md
+
+          if [ -n "${previous}" ]; then
+            git log --pretty=format:'- %h %s' "${previous}..HEAD" >> release-notes.md
+            echo >> release-notes.md
+            echo >> release-notes.md
+            echo "Compare: ${previous}...${next_tag}" >> release-notes.md
+          else
+            git log --pretty=format:'- %h %s' HEAD >> release-notes.md
+          fi
+
+          if [ ! -s release-notes.md ]; then
+            echo "Release notes generation failed: empty notes file" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          next_tag="${{ steps.semver.outputs.next_tag }}"
+          gh release create "${next_tag}" --title "${next_tag}" --notes-file release-notes.md
