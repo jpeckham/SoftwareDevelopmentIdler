@@ -27,7 +27,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore SoftwareVSMSimulator.sln
+        run: dotnet restore SoftwareDevelopmentIdler.sln
 
       - name: Test
         run: dotnet test Tests/SoftwareVSM.Tests.csproj --configuration Release --verbosity minimal
