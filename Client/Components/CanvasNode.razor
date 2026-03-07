@@ -1,0 +1,86 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.Services
+@using SoftwareVSM.Client.GameEngine
+@inject CanvasDragService DragSvc
+@inject SimulationEngine Engine
+
+<div class="canvas-node @(DragSvc.DraggingNodeId == Node.Id ? "dragging" : "")"
+     style="left:@(Node.X.ToString("0"))px; top:@(Node.Y.ToString("0"))px; width:@(CanvasLayout.TotalWidth)px;">
+
+    @* ── Input ports (left column) ── *@
+    <div class="node-ports" style="width:@(CanvasLayout.PortColWidth)px;">
+        @for (int i = 0; i < Node.InputPorts.Count; i++)
+        {
+            var port      = Node.InputPorts[i];
+            var color     = CanvasLayout.TokenColor(port.TokenType);
+            bool isTarget = DragSvc.IsConnecting && DragSvc.ConnectingType == port.TokenType;
+            <div class="port-row" style="height:@(CanvasLayout.PortRowHeight)px;"
+                 title="INPUT: @port.Label — drop a @port.TokenType connection here">
+                <div class="port-dot @(isTarget ? "port-target" : "")"
+                     style="background:@color; box-shadow:0 0 6px @color"
+                     @onmouseup="() => HandleInputPortMouseUp(port)"
+                     @onmouseup:stopPropagation="true">
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ── Node body ── *@
+    <div class="node-body" style="width:@(CanvasLayout.ContentWidth)px;">
+        <div class="node-header-bar" @onmousedown="HandleHeaderMouseDown" @onmousedown:stopPropagation="true">
+            <span class="node-type-name">@Node.Name</span>
+            <button class="node-delete-btn" @onclick="() => OnDelete.InvokeAsync(Node.Id)" @onclick:stopPropagation="true">×</button>
+        </div>
+
+        <div class="node-throughput">@Node.LastThroughput.ToString("0.0") /s</div>
+
+        <div class="node-queue">
+            @foreach (var q in Node.Queue.Where(kv => kv.Value > 0.01))
+            {
+                <div class="queue-chip" style="border-color:@CanvasLayout.TokenColor(q.Key)">
+                    <span class="queue-chip-label">@q.Key</span>
+                    <span class="queue-chip-amount">@q.Value.ToString("0")</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ── Output ports (right column) ── *@
+    <div class="node-ports" style="width:@(CanvasLayout.PortColWidth)px;">
+        @for (int i = 0; i < Node.OutputPorts.Count; i++)
+        {
+            var port  = Node.OutputPorts[i];
+            var color = CanvasLayout.TokenColor(port.TokenType);
+            <div class="port-row" style="height:@(CanvasLayout.PortRowHeight)px;"
+                 title="OUTPUT: @port.Label — drag to connect">
+                <div class="port-dot port-output"
+                     style="background:@color; box-shadow:0 0 6px @color"
+                     @onmousedown="(e) => HandleOutputPortMouseDown(e, i, port)"
+                     @onmousedown:stopPropagation="true">
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Node Node { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnDelete { get; set; }
+
+    private void HandleHeaderMouseDown(MouseEventArgs e)
+    {
+        var (cx, cy) = DragSvc.ToCanvas(e.ClientX, e.ClientY);
+        DragSvc.BeginNodeDrag(Node.Id, cx, cy, Node.X, Node.Y);
+    }
+
+    private void HandleOutputPortMouseDown(MouseEventArgs e, int portIndex, Port port)
+    {
+        var (sx, sy) = CanvasLayout.OutputPortCenter(Node, portIndex);
+        DragSvc.BeginConnection(Node.Id, port.Id, port.TokenType, sx, sy);
+    }
+
+    private void HandleInputPortMouseUp(Port port)
+    {
+        DragSvc.TryCompleteConnection(Engine.State, Node.Id, port.Id, port.TokenType);
+    }
+}

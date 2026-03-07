@@ -1,0 +1,165 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.GameEngine
+@using SoftwareVSM.Client.Services
+@inject SimulationEngine Engine
+@inject CanvasDragService DragSvc
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="canvas-area @(_dragOver ? "drag-over" : "")"
+     id="game-canvas"
+     @ondragover:preventDefault="true"
+     @ondragenter="() => _dragOver = true"
+     @ondragleave="() => _dragOver = false"
+     @ondrop="HandleCanvasDrop"
+     @onmousemove="HandleMouseMove"
+     @onmouseup="HandleMouseUp">
+
+    @* ── SVG connection layer (pointer-events:none so nodes remain clickable) ── *@
+    <svg class="canvas-svg">
+        @* Established connections *@
+        @foreach (var conn in Engine.State.Connections)
+        {
+            var (sx, sy) = GetOutputPortCenter(conn.SourceNodeId, conn.SourcePortId);
+            var (tx, ty) = GetInputPortCenter(conn.TargetNodeId, conn.TargetPortId);
+            var color = CanvasLayout.TokenColor(conn.TokenType);
+            <g>
+                <path d="@Bezier(sx, sy, tx, ty)"
+                      stroke="@color" stroke-width="2" fill="none" opacity="0.8"
+                      style="pointer-events:stroke;cursor:pointer"
+                      @onclick="() => RemoveConnection(conn.Id)" />
+                @* Arrowhead *@
+                <circle cx="@tx.ToString("0")" cy="@ty.ToString("0")" r="4" fill="@color" opacity="0.9" />
+            </g>
+        }
+
+        @* In-progress connection while dragging *@
+        @if (DragSvc.IsConnecting)
+        {
+            var color = CanvasLayout.TokenColor(DragSvc.ConnectingType!.Value);
+            <path d="@Bezier(DragSvc.ConnectStartX, DragSvc.ConnectStartY, DragSvc.ConnectEndX, DragSvc.ConnectEndY)"
+                  stroke="@color" stroke-width="2" stroke-dasharray="6 3" fill="none" opacity="0.6" />
+        }
+    </svg>
+
+    @* ── Canvas nodes ── *@
+    @foreach (var node in Engine.State.Nodes)
+    {
+        <CanvasNode Node="node" OnDelete="RemoveNode" />
+    }
+
+    @* ── Empty state hint ── *@
+    @if (!Engine.State.Nodes.Any())
+    {
+        <div class="canvas-hint">
+            <div class="canvas-hint-icon">⬡</div>
+            <div class="canvas-hint-main">Drag nodes from the left panel onto the canvas</div>
+            <div class="canvas-hint-sub">Then drag colored dots to connect outputs → inputs</div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _dragOver;
+
+    protected override void OnInitialized()
+    {
+        DragSvc.OnChange += RequestRender;
+        Engine.OnTick    += RequestRender;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await RefreshBounds();
+    }
+
+    private async Task RefreshBounds()
+    {
+        var b = await JS.InvokeAsync<BoundingRect>("getElementBounds", "game-canvas");
+        DragSvc.CanvasLeft = b.Left;
+        DragSvc.CanvasTop  = b.Top;
+    }
+
+    // ── Toolbox drop ──────────────────────────────────────────────────────────
+
+    private async Task HandleCanvasDrop(DragEventArgs e)
+    {
+        if (DragSvc.ToolboxDragType == null) return;
+        await RefreshBounds();                  // recalc in case window scrolled
+        var (x, y) = DragSvc.ToCanvas(e.ClientX, e.ClientY);
+        var node = NodeFactory.Create(DragSvc.ToolboxDragType.Value, x - CanvasLayout.TotalWidth / 2, y - 40);
+        Engine.State.Nodes.Add(node);
+        DragSvc.EndToolboxDrag();
+        _dragOver = false;
+    }
+
+    // ── Mouse tracking ────────────────────────────────────────────────────────
+
+    private void HandleMouseMove(MouseEventArgs e)
+    {
+        var (x, y) = DragSvc.ToCanvas(e.ClientX, e.ClientY);
+
+        if (DragSvc.IsDraggingNode)
+        {
+            var node = Engine.State.Nodes.FirstOrDefault(n => n.Id == DragSvc.DraggingNodeId);
+            if (node != null) DragSvc.UpdateNodePosition(node, x, y);
+        }
+
+        if (DragSvc.IsConnecting)
+            DragSvc.UpdateConnectionEnd(x, y);
+    }
+
+    private void HandleMouseUp(MouseEventArgs e)
+    {
+        DragSvc.EndNodeDrag();
+        if (DragSvc.IsConnecting)
+            DragSvc.CancelConnection();
+    }
+
+    // ── Mutations ─────────────────────────────────────────────────────────────
+
+    private void RemoveNode(string nodeId)
+    {
+        Engine.State.Nodes.RemoveAll(n => n.Id == nodeId);
+        Engine.State.Connections.RemoveAll(c => c.SourceNodeId == nodeId || c.TargetNodeId == nodeId);
+    }
+
+    private void RemoveConnection(string connId)
+        => Engine.State.Connections.RemoveAll(c => c.Id == connId);
+
+    // ── SVG helpers ───────────────────────────────────────────────────────────
+
+    private (double x, double y) GetOutputPortCenter(string nodeId, string portId)
+    {
+        var node = Engine.State.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node == null) return (0, 0);
+        int idx = node.OutputPorts.FindIndex(p => p.Id == portId);
+        return idx < 0 ? (0, 0) : CanvasLayout.OutputPortCenter(node, idx);
+    }
+
+    private (double x, double y) GetInputPortCenter(string nodeId, string portId)
+    {
+        var node = Engine.State.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node == null) return (0, 0);
+        int idx = node.InputPorts.FindIndex(p => p.Id == portId);
+        return idx < 0 ? (0, 0) : CanvasLayout.InputPortCenter(node, idx);
+    }
+
+    private static string Bezier(double sx, double sy, double tx, double ty)
+    {
+        double cp = Math.Max(60, Math.Abs(tx - sx) * 0.5);
+        return $"M {sx:0} {sy:0} C {sx + cp:0} {sy:0} {tx - cp:0} {ty:0} {tx:0} {ty:0}";
+    }
+
+    private void RequestRender() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        DragSvc.OnChange -= RequestRender;
+        Engine.OnTick    -= RequestRender;
+    }
+
+    // ── JS interop record ─────────────────────────────────────────────────────
+    private record BoundingRect(double Left, double Top);
+}

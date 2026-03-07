@@ -4,68 +4,56 @@
 @using SoftwareVSM.Client.Components
 @inject SimulationEngine Engine
 @inject SaveService SaveService
-@inject DragDropService DragService
 @implements IDisposable
 
+@* ── Top metrics bar ── *@
 <div class="top-bar">
-    <h1>⬢ Value Stream Simulator</h1>
+    <h1>⬢ Software Factory</h1>
     <div class="metrics-panel">
         <div class="metric">
             <span class="metric-label">Funds</span>
-            <span class="metric-value">@Engine.State.Funds.ToString("C0")</span>
-        </div>
-        <div class="metric">
-            <span class="metric-label">Satisfacton</span>
-            <span class="metric-value @(Engine.State.CustomerSatisfaction > 0.8 ? "positive" : "negative")">
-                @((Engine.State.CustomerSatisfaction * 100).ToString("0.0"))%
+            <span class="metric-value @(Engine.State.Funds >= 0 ? "positive" : "negative")">
+                @Engine.State.Funds.ToString("C0")
             </span>
         </div>
         <div class="metric">
-            <span class="metric-label">Debt</span>
-            <span class="metric-value text-rose">@Engine.State.TechnicalDebt.ToString("0")</span>
+            <span class="metric-label">Satisfaction</span>
+            <span class="metric-value @(Engine.State.CustomerSatisfaction > 0.7 ? "positive" : "negative")">
+                @((Engine.State.CustomerSatisfaction * 100).ToString("0"))%
+            </span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Customers</span>
+            <span class="metric-value">@Engine.State.CustomerCount.ToString("N0")</span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Tech Debt</span>
+            <span class="metric-value @(Engine.State.TechnicalDebt > 500 ? "negative" : "")">
+                @Engine.State.TechnicalDebt.ToString("0")
+            </span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Revenue</span>
+            <span class="metric-value positive">@Engine.State.TotalRevenue.ToString("C0")</span>
         </div>
     </div>
 </div>
 
-<div class="main-content">
-    <div class="vsm-container">
-        @foreach (var node in Engine.State.Nodes)
-        {
-            <NodeDetails Node="node" AssignedStaff="Engine.State.Employees.Where(e => e.AssignedNodeId == node.Id).ToList()" />
-            @if (node != Engine.State.Nodes.Last())
-            {
-                <div class="flow-arrow">➔</div>
-            }
-        }
-    </div>
-
-    <StaffRoster AllEmployees="Engine.State.Employees" />
+@* ── Game layout: toolbox + canvas ── *@
+<div class="game-layout">
+    <Toolbox />
+    <GameCanvas />
 </div>
 
 @code {
     protected override async Task OnInitializedAsync()
     {
         await SaveService.LoadAsync();
-        Engine.OnTick += HandleTick;
-        DragService.OnStateChange += ForceRender;
         Engine.Start();
-    }
-
-    private async void HandleTick()
-    {
-        await InvokeAsync(StateHasChanged);
-        await SaveService.SaveAsync(); 
-    }
-
-    private void ForceRender()
-    {
-        InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
     {
         Engine.Stop();
-        Engine.OnTick -= HandleTick;
-        DragService.OnStateChange -= ForceRender;
     }
 }

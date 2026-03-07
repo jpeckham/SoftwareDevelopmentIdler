@@ -1,0 +1,73 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.Services
+@inject CanvasDragService DragSvc
+
+<div class="toolbox-panel">
+    <div class="toolbox-section-label">Nodes — drag to canvas</div>
+
+    @foreach (var entry in _nodes)
+    {
+        var type  = entry.Type;
+        var color = entry.Color;
+        <div class="toolbox-item"
+             draggable="true"
+             title="@entry.Description"
+             @ondragstart="() => DragSvc.BeginToolboxDrag(type)"
+             @ondragend="DragSvc.EndToolboxDrag">
+            <div class="toolbox-dot" style="background:@color; color:@color"></div>
+            <div class="toolbox-item-info">
+                <span class="toolbox-item-name">@entry.Name</span>
+                <span class="toolbox-item-ports">@entry.Ports</span>
+            </div>
+        </div>
+    }
+
+    <hr class="toolbox-divider" />
+    <div class="toolbox-legend-title">Token colors</div>
+
+    @foreach (var t in _tokens)
+    {
+        <div class="toolbox-token-row">
+            <div class="toolbox-token-dot" style="background:@CanvasLayout.TokenColor(t.Type); box-shadow:0 0 4px @CanvasLayout.TokenColor(t.Type)"></div>
+            <span>@t.Label</span>
+        </div>
+    }
+
+    <hr class="toolbox-divider" />
+    <div class="toolbox-legend-title">How to connect</div>
+    <div style="font-size:0.62rem; color:#475569; padding:0.25rem 0.5rem; line-height:1.5;">
+        Drag a <span style="color:#38bdf8">colored dot</span> on the <strong style="color:#94a3b8">right</strong> of a node to a matching dot on the <strong style="color:#94a3b8">left</strong> of another.<br/><br/>
+        Click a connection line to delete it.
+    </div>
+</div>
+
+@code {
+    private readonly record struct NodeEntry(NodeType Type, string Name, string Ports, string Color, string Description);
+    private readonly record struct TokenEntry(TokenType Type, string Label);
+
+    private static readonly NodeEntry[] _nodes =
+    [
+        new(NodeType.Market,            "Market",            "→ Demand",            "#f59e0b", "Generates demand. Add Dissatisfaction input to shrink the market."),
+        new(NodeType.ProductManagement, "Product Mgmt",      "Demand → Features",   "#3b82f6", "Interprets market demand as product features to build."),
+        new(NodeType.BusinessAnalysis,  "Business Analysis", "Features → Stories",  "#8b5cf6", "Breaks features into implementable user stories."),
+        new(NodeType.Development,       "Development",       "Stories → Software",  "#10b981", "Builds software. Accepts rework via Failure Demand input."),
+        new(NodeType.Operations,        "Operations",        "Software → Artifacts","#06b6d4", "Packages software into deployable artifacts."),
+        new(NodeType.HostedCompute,     "Hosted Compute",    "Artifacts → Work",    "#22c55e", "Runs software as a hosted service."),
+        new(NodeType.UserWorkstation,   "User Workstations", "Artifacts → Work",    "#22c55e", "Delivers packaged software to end-user machines."),
+        new(NodeType.Users,             "Users",             "Work → Incidents",    "#f59e0b", "Receives value, generates revenue and quality incidents."),
+        new(NodeType.Support,           "Support",           "Incidents → FD+Dis.", "#ec4899", "Routes incidents back as rework and dissatisfaction."),
+    ];
+
+    private static readonly TokenEntry[] _tokens =
+    [
+        new(TokenType.Demand,              "Demand"),
+        new(TokenType.Features,            "Features"),
+        new(TokenType.UserStories,         "User Stories"),
+        new(TokenType.Software,            "Software"),
+        new(TokenType.DeployableArtifacts, "Deployable Artifacts"),
+        new(TokenType.WorkProduct,         "Work Product"),
+        new(TokenType.Incidents,           "Incidents"),
+        new(TokenType.FailureDemand,       "Failure Demand"),
+        new(TokenType.Dissatisfaction,     "Dissatisfaction"),
+    ];
+}

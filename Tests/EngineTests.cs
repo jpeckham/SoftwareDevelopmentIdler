@@ -7,55 +7,144 @@ using Xunit;
 
 public class EngineTests
 {
-    [Fact]
-    public void Engine_Initializes_With_Correct_DefaultState()
+    // Helper: build a minimal connected pipeline in a fresh engine.
+    // Market → ProductManagement → BusinessAnalysis → Development → Operations → HostedCompute → Users → Support (+ feedback)
+    private static SimulationEngine BuildConnectedPipeline()
     {
         var engine = new SimulationEngine();
-        Assert.NotNull(engine.State);
-        Assert.Equal(500000, engine.State.Funds);
-        Assert.Equal(7, engine.State.Nodes.Count);
-        Assert.Contains(engine.State.Nodes, n => n.NodeType == NodeType.Customers);
+        var state  = engine.State;
+
+        var market  = NodeFactory.Create(NodeType.Market,            0,   0);
+        var pm      = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
+        var ba      = NodeFactory.Create(NodeType.BusinessAnalysis,  440, 0);
+        var dev     = NodeFactory.Create(NodeType.Development,       660, 0);
+        var ops     = NodeFactory.Create(NodeType.Operations,        880, 0);
+        var compute = NodeFactory.Create(NodeType.HostedCompute,    1100, 0);
+        var users   = NodeFactory.Create(NodeType.Users,            1320, 0);
+        var support = NodeFactory.Create(NodeType.Support,          1540, 0);
+
+        state.Nodes.AddRange([market, pm, ba, dev, ops, compute, users, support]);
+
+        Connect(state, market,  TokenType.Demand,              pm,      TokenType.Demand);
+        Connect(state, pm,      TokenType.Features,            ba,      TokenType.Features);
+        Connect(state, ba,      TokenType.UserStories,         dev,     TokenType.UserStories);
+        Connect(state, dev,     TokenType.Software,            ops,     TokenType.Software);
+        Connect(state, ops,     TokenType.DeployableArtifacts, compute, TokenType.DeployableArtifacts);
+        Connect(state, compute, TokenType.WorkProduct,         users,   TokenType.WorkProduct);
+        Connect(state, users,   TokenType.Incidents,           support, TokenType.Incidents);
+        Connect(state, support, TokenType.FailureDemand,       dev,     TokenType.FailureDemand);
+        Connect(state, support, TokenType.Dissatisfaction,     market,  TokenType.Dissatisfaction);
+
+        return engine;
+    }
+
+    private static void Connect(GameState state, Node source, TokenType srcType, Node target, TokenType tgtType)
+    {
+        var srcPort = source.OutputPorts.First(p => p.TokenType == srcType);
+        var tgtPort = target.InputPorts.First(p => p.TokenType == tgtType);
+        state.Connections.Add(new Connection
+        {
+            SourceNodeId = source.Id, SourcePortId = srcPort.Id, TokenType = srcType,
+            TargetNodeId = target.Id, TargetPortId = tgtPort.Id
+        });
+    }
+
+    // ── Tests ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Engine_Starts_With_Empty_Canvas()
+    {
+        var engine = new SimulationEngine();
+        Assert.Empty(engine.State.Nodes);
+        Assert.Empty(engine.State.Connections);
     }
 
     [Fact]
-    public void Tick_Generates_Demand_And_Flows()
+    public void GameState_Initial_Economic_Values()
+    {
+        var state = new GameState();
+        Assert.Equal(500000, state.Funds);
+        Assert.Equal(10000, state.TotalAddressableMarket);
+        Assert.Equal(1.0, state.CustomerSatisfaction);
+    }
+
+    [Fact]
+    public void NodeFactory_Creates_Correct_Ports()
+    {
+        var market = NodeFactory.Create(NodeType.Market);
+        Assert.Contains(market.OutputPorts, p => p.TokenType == TokenType.Demand);
+        Assert.Contains(market.InputPorts,  p => p.TokenType == TokenType.Dissatisfaction);
+
+        var dev = NodeFactory.Create(NodeType.Development);
+        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.UserStories);
+        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.FailureDemand);
+        Assert.Contains(dev.OutputPorts, p => p.TokenType == TokenType.Software);
+    }
+
+    [Fact]
+    public void Tick_With_No_Nodes_Does_Not_Crash()
     {
         var engine = new SimulationEngine();
-        var prodNode = engine.State.Nodes.First(n => n.NodeType == NodeType.ProductLeadership);
-        
-        // Assert initial demand is 0
-        bool hasDemand = prodNode.Queue.TryGetValue(TokenType.Demand, out double demand);
-        Assert.False(hasDemand && demand > 0);
+        engine.ManualTick();  // must not throw
+        Assert.Equal(0, engine.State.TotalDemandReceived);
+    }
 
+    [Fact]
+    public void Market_Generates_Demand_Each_Tick()
+    {
+        var engine = BuildConnectedPipeline();
         engine.ManualTick();
-
-        // After one tick, Customer node generated demand to Product node
-        prodNode.Queue.TryGetValue(TokenType.Demand, out demand);
-        Assert.True(demand > 0);
         Assert.True(engine.State.TotalDemandReceived > 0);
     }
 
     [Fact]
-    public void Tick_Reduces_Funds_Due_To_Salaries()
+    public void Flow_Propagates_Through_Full_Pipeline()
     {
-        var engine = new SimulationEngine();
-        double initialFunds = engine.State.Funds;
-        
-        engine.ManualTick();
-        
-        // Salary should deduct, revenue should add. We verify Funds changed.
-        Assert.NotEqual(initialFunds, engine.State.Funds);
+        var engine = BuildConnectedPipeline();
+        // Pipeline has latency — run enough ticks for work to reach Users
+        for (int i = 0; i < 20; i++)
+            engine.ManualTick();
+
+        Assert.True(engine.State.TotalWorkDelivered > 0, "Work should have reached users");
+        Assert.True(engine.State.TotalRevenue > 0,       "Revenue should have been generated");
+        Assert.True(engine.State.TotalIncidents > 0,     "Incidents should be generated from delivered work");
     }
 
     [Fact]
-    public void GameState_Holds_Connections_And_Coordinates()
+    public void Unconnected_Output_Tokens_Are_Silently_Dropped()
     {
-        var state = new GameState();
-        var node = new Node { X = 100, Y = 200 };
-        state.Nodes.Add(node);
-        state.Connections.Add(new Connection { SourceId = "1", TargetId = "2" });
-        
-        Assert.Equal(100, node.X);
-        Assert.Single(state.Connections);
+        var engine = new SimulationEngine();
+        var market = NodeFactory.Create(NodeType.Market, 0, 0);
+        engine.State.Nodes.Add(market);
+
+        engine.ManualTick();  // Market generates demand but no PM is connected
+        // Demand should be generated then dropped — no crash, market node queue stays empty
+        Assert.Equal(0, market.Queue.Values.Sum());
+    }
+
+    [Fact]
+    public void Technical_Debt_Accumulates_As_Dev_Works()
+    {
+        var engine = BuildConnectedPipeline();
+        double initialDebt = engine.State.TechnicalDebt;
+        for (int i = 0; i < 10; i++)
+            engine.ManualTick();
+
+        Assert.True(engine.State.TechnicalDebt > initialDebt);
+    }
+
+    [Fact]
+    public void Connections_Route_Tokens_To_Target_Node()
+    {
+        var engine = new SimulationEngine();
+        var market = NodeFactory.Create(NodeType.Market,            0, 0);
+        var pm     = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
+        engine.State.Nodes.AddRange([market, pm]);
+        Connect(engine.State, market, TokenType.Demand, pm, TokenType.Demand);
+
+        engine.ManualTick();
+
+        // PM should have received demand (it may have already consumed some)
+        Assert.True(engine.State.TotalDemandReceived > 0);
     }
 }

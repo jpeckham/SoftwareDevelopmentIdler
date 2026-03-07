@@ -10,6 +10,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddSingleton<SimulationEngine>();
+builder.Services.AddSingleton<CanvasDragService>();
 builder.Services.AddScoped<SaveService>();
 builder.Services.AddScoped<DragDropService>();
 

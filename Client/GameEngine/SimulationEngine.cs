@@ -3,25 +3,35 @@ namespace SoftwareVSM.Client.GameEngine;
 using SoftwareVSM.Client.Models;
 using System;
 using System.Linq;
-using System.Collections.Generic;
 using System.Timers;
 using Timer = System.Timers.Timer;
 
+/// <summary>
+/// Connection-aware simulation engine. Flow follows the connections the player
+/// draws between nodes rather than a hardcoded pipeline.
+/// </summary>
 public class SimulationEngine
 {
     public GameState State { get; private set; }
-    private Timer _timer;
+    private readonly Timer _timer;
 
     public event Action? OnTick;
+
+    private const double DemandPerCustomer  = 0.05;  // demand tokens per customer per tick
+    private const double BaseThroughput     = 5.0;   // tokens per tick (no staff modifier yet)
+    private const double BaseIncidentRate   = 0.15;  // incidents per work-product unit
+    private const double RevenuePerWork     = 2.5;   // revenue per work-product unit per customer
 
     public SimulationEngine()
     {
         State = new GameState();
-        InitializeDefaultState();
-
         _timer = new Timer(1000);
-        _timer.Elapsed += (sender, e) => Tick();
+        _timer.Elapsed += (_, _) => Tick();
     }
+
+    public void Start()  => _timer.Start();
+    public void Stop()   => _timer.Stop();
+    public void ManualTick() => Tick();
 
     public void LoadState(GameState state)
     {
@@ -29,209 +39,163 @@ public class SimulationEngine
         OnTick?.Invoke();
     }
 
-    public void Start() => _timer.Start();
-    public void Stop() => _timer.Stop();
-    public void ManualTick() => Tick();
-
-    private void InitializeDefaultState()
-    {
-        State.Nodes.Add(new Node { Id = "customers", NodeType = NodeType.Customers, Name = "Customers" });
-        State.Nodes.Add(new Node { Id = "product", NodeType = NodeType.ProductLeadership, Name = "Product Leadership" });
-        State.Nodes.Add(new Node { Id = "ba", NodeType = NodeType.BusinessAnalyst, Name = "Business Analyst" });
-        State.Nodes.Add(new Node { Id = "dev", NodeType = NodeType.Developers, Name = "Developers" });
-        State.Nodes.Add(new Node { Id = "qa", NodeType = NodeType.QA, Name = "QA" });
-        State.Nodes.Add(new Node { Id = "ops", NodeType = NodeType.Operations, Name = "Operations" });
-        State.Nodes.Add(new Node { Id = "support", NodeType = NodeType.Support, Name = "Support" });
-
-        State.Funds = 500000;
-        State.CustomerCount = 1000;
-        
-        State.Employees.Add(new Employee { Role = EmployeeRole.ProductManager, Name = "Prod Manager 1", AssignedNodeId = "product", Salary = 120000 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.BusinessAnalyst, Name = "BA 1", AssignedNodeId = "ba", Salary = 100000 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.Developer, Name = "Dev 1", AssignedNodeId = "dev", Salary = 130000 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.QAEngineer, Name = "QA 1", AssignedNodeId = "qa", Salary = 90000 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.OperationsEngineer, Name = "Ops 1", AssignedNodeId = "ops", Salary = 110000 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.SupportAnalyst, Name = "Support 1", AssignedNodeId = "support", Salary = 70000 });
-
-        // Add some unassigned staff for drag and drop interactions
-        State.Employees.Add(new Employee { Role = EmployeeRole.Developer, Name = "Trainee Dev", AssignedNodeId = "", Salary = 60000, SkillLevel = 0.5 });
-        State.Employees.Add(new Employee { Role = EmployeeRole.QAEngineer, Name = "Sr QA", AssignedNodeId = "", Salary = 120000, SkillLevel = 1.5 });
-    }
+    // ─── Main tick ───────────────────────────────────────────────────────────
 
     private void Tick()
     {
         try
         {
-            GenerateCustomerDemand();
-            ProcessProduct();
-            ProcessBA();
-            ProcessDevs();
-            ProcessQA();
-            ProcessOps();
-            ProcessSupport();
-            
-            UpdateMetrics();
+            // Snapshot the node list to avoid modification during iteration
+            foreach (var node in State.Nodes.ToList())
+                ProcessNode(node);
+
+            UpdateGlobalMetrics();
             OnTick?.Invoke();
         }
-        catch(Exception)
+        catch (Exception) { /* prevent timer crashes */ }
+    }
+
+    private void ProcessNode(Node node)
+    {
+        switch (node.NodeType)
         {
-            // Catch all to prevent timer crashes during iteration
+            case NodeType.Market:            ProcessMarket(node);            break;
+            case NodeType.ProductManagement: ProcessTransform(node, TokenType.Demand,            TokenType.Features,            1.0); break;
+            case NodeType.BusinessAnalysis:  ProcessTransform(node, TokenType.Features,           TokenType.UserStories,         1.0); break;
+            case NodeType.Development:       ProcessDevelopment(node);                            break;
+            case NodeType.Operations:        ProcessTransform(node, TokenType.Software,           TokenType.DeployableArtifacts, 1.0); break;
+            case NodeType.HostedCompute:
+            case NodeType.UserWorkstation:   ProcessTransform(node, TokenType.DeployableArtifacts,TokenType.WorkProduct,         1.0); break;
+            case NodeType.Users:             ProcessUsers(node);                                  break;
+            case NodeType.Support:           ProcessSupport(node);                                break;
         }
     }
 
-    private double GetNodeThroughput(NodeType type)
+    // ─── Node processors ─────────────────────────────────────────────────────
+
+    /// Market: generates Demand; Dissatisfaction shrinks the market.
+    private void ProcessMarket(Node node)
     {
-        var node = State.Nodes.FirstOrDefault(n => n.NodeType == type);
-        if (node == null) return 0;
-        var staff = State.Employees.Where(e => e.AssignedNodeId == node.Id).ToList();
-        return staff.Sum(e => Math.Max(0.1, e.Productivity * e.SkillLevel));
+        double dissatisfaction = ConsumeAll(node, TokenType.Dissatisfaction);
+        if (dissatisfaction > 0)
+        {
+            int churn = (int)(dissatisfaction * 5);
+            State.CustomerCount = Math.Max(0, State.CustomerCount - churn);
+        }
+
+        double demand = State.CustomerCount * DemandPerCustomer;
+        PushOutput(node, TokenType.Demand, demand);
+        State.TotalDemandReceived += demand;
+        node.LastThroughput = demand;
     }
 
-    private double ConsumeQueue(Node node, TokenType tokenType, double maxAmount)
+    /// Generic 1-to-1 transform: consume inputType, produce outputType.
+    private void ProcessTransform(Node node, TokenType input, TokenType output, double efficiency)
     {
-        if (!node.Queue.ContainsKey(tokenType)) return 0;
-        double available = node.Queue[tokenType];
-        double consumed = Math.Min(maxAmount, available);
-        node.Queue[tokenType] -= consumed;
+        double consumed = Consume(node, input, BaseThroughput);
+        if (consumed <= 0) return;
+        PushOutput(node, output, consumed * efficiency);
+        node.LastThroughput = consumed;
+    }
+
+    /// Development: UserStories + FailureDemand (rework) → Software.
+    /// Technical debt slows throughput and worsens defect rate.
+    private void ProcessDevelopment(Node node)
+    {
+        double debtPenalty = Math.Max(0.1, 1.0 - State.TechnicalDebt / 10_000.0);
+        double capacity = BaseThroughput * debtPenalty;
+
+        double stories  = Consume(node, TokenType.UserStories,   capacity);
+        double rework   = Consume(node, TokenType.FailureDemand, capacity * 0.5);
+        double produced = stories + rework;
+
+        if (produced <= 0) return;
+
+        State.TechnicalDebt += produced * 0.05;  // coding accrues debt
+        PushOutput(node, TokenType.Software, produced);
+        State.TotalBugsGenerated += produced * 0.1;
+        node.LastThroughput = produced;
+    }
+
+    /// Users: WorkProduct → Revenue + Incidents.
+    /// Incidents rate rises with TechnicalDebt (proxy for quality).
+    private void ProcessUsers(Node node)
+    {
+        double work = ConsumeAll(node, TokenType.WorkProduct);
+        if (work <= 0) return;
+
+        double revenue = work * State.CustomerCount * RevenuePerWork;
+        State.Funds         += revenue;
+        State.TotalRevenue  += revenue;
+        State.TotalWorkDelivered += work;
+
+        double incidentRate = BaseIncidentRate + State.TechnicalDebt / 50_000.0;
+        double incidents    = work * incidentRate;
+        PushOutput(node, TokenType.Incidents, incidents);
+        State.TotalIncidents += incidents;
+
+        State.CustomerSatisfaction = Math.Min(1.0, State.CustomerSatisfaction + work * 0.001);
+        node.LastThroughput = work;
+    }
+
+    /// Support: Incidents → FailureDemand (back to dev) + Dissatisfaction (back to market).
+    private void ProcessSupport(Node node)
+    {
+        double resolved = Consume(node, TokenType.Incidents, BaseThroughput * 2);
+        if (resolved <= 0) return;
+
+        PushOutput(node, TokenType.FailureDemand,  resolved * 0.6);
+        PushOutput(node, TokenType.Dissatisfaction, resolved * 0.2);
+
+        State.CustomerSatisfaction -= resolved * 0.002;
+        State.CustomerSatisfaction  = Math.Max(0.1, State.CustomerSatisfaction);
+        node.LastThroughput = resolved;
+    }
+
+    // ─── Queue helpers ────────────────────────────────────────────────────────
+
+    private double Consume(Node node, TokenType type, double max)
+    {
+        if (!node.Queue.TryGetValue(type, out double available) || available <= 0) return 0;
+        double consumed = Math.Min(max, available);
+        node.Queue[type] = available - consumed;
+        if (node.Queue[type] < 0.0001) node.Queue.Remove(type);
         return consumed;
     }
 
-    private void ProduceToken(Node target, TokenType tokenType, double amount)
+    private double ConsumeAll(Node node, TokenType type)
+        => Consume(node, type, double.MaxValue);
+
+    /// Push tokens from a source node along all outgoing connections of the given type.
+    private void PushOutput(Node source, TokenType type, double amount)
     {
-        if (target == null) return;
-        if (!target.Queue.ContainsKey(tokenType)) target.Queue[tokenType] = 0;
-        target.Queue[tokenType] += amount;
-    }
+        if (amount <= 0.0001) return;
 
-    private void GenerateCustomerDemand()
-    {
-        var prodNode = State.Nodes.First(n => n.NodeType == NodeType.ProductLeadership);
-        double demandRate = State.CustomerCount * 0.05; 
-        ProduceToken(prodNode, TokenType.Demand, demandRate);
-        State.TotalDemandReceived += demandRate;
-    }
+        var targets = State.Connections
+            .Where(c => c.SourceNodeId == source.Id && c.TokenType == type)
+            .Select(c => State.Nodes.FirstOrDefault(n => n.Id == c.TargetNodeId))
+            .Where(n => n != null)
+            .ToList();
 
-    private void ProcessProduct()
-    {
-        var prodNode = State.Nodes.First(n => n.NodeType == NodeType.ProductLeadership);
-        var baNode = State.Nodes.First(n => n.NodeType == NodeType.BusinessAnalyst);
-        
-        double throughput = GetNodeThroughput(NodeType.ProductLeadership) * 10;
-        double consumedDemand = ConsumeQueue(prodNode, TokenType.Demand, throughput);
-        
-        double vision = consumedDemand * 1.0; 
-        ProduceToken(baNode, TokenType.Vision, vision);
-        prodNode.LastThroughput = vision;
-    }
+        if (targets.Count == 0) return; // no connection → tokens lost (useful backpressure signal)
 
-    private void ProcessBA()
-    {
-        var baNode = State.Nodes.First(n => n.NodeType == NodeType.BusinessAnalyst);
-        var devNode = State.Nodes.First(n => n.NodeType == NodeType.Developers);
-        
-        double throughput = GetNodeThroughput(NodeType.BusinessAnalyst) * 8;
-        double consumedVision = ConsumeQueue(baNode, TokenType.Vision, throughput);
-        
-        double detailedDemand = consumedVision * 1.0;
-        ProduceToken(devNode, TokenType.DetailedDemand, detailedDemand);
-        baNode.LastThroughput = detailedDemand;
-    }
-
-    private void ProcessDevs()
-    {
-        var devNode = State.Nodes.First(n => n.NodeType == NodeType.Developers);
-        var qaNode = State.Nodes.First(n => n.NodeType == NodeType.QA);
-        var supportNode = State.Nodes.First(n => n.NodeType == NodeType.Support);
-        
-        double throughput = GetNodeThroughput(NodeType.Developers) * 5; 
-        
-        double debtFactor = Math.Max(0.1, 1 - (State.TechnicalDebt / 10000.0));
-        throughput *= debtFactor;
-
-        double consumed = ConsumeQueue(devNode, TokenType.DetailedDemand, throughput);
-        
-        double defectRate = 0.15 + (State.TechnicalDebt / 20000.0);
-        double solutions = consumed;
-        double failureDemand = solutions * defectRate;
-        
-        ProduceToken(qaNode, TokenType.Solutions, solutions);
-        ProduceToken(supportNode, TokenType.FailureDemand, failureDemand);
-
-        State.TotalBugsGenerated += failureDemand;
-        State.TechnicalDebt += solutions * 0.05;
-
-        devNode.LastThroughput = solutions;
-    }
-
-    private void ProcessQA()
-    {
-        var qaNode = State.Nodes.First(n => n.NodeType == NodeType.QA);
-        var opsNode = State.Nodes.First(n => n.NodeType == NodeType.Operations);
-        var devNode = State.Nodes.First(n => n.NodeType == NodeType.Developers);
-        
-        double throughput = GetNodeThroughput(NodeType.QA) * 6;
-        double consumed = ConsumeQueue(qaNode, TokenType.Solutions, throughput);
-        
-        double failureRate = 0.10; 
-        double validSolutions = consumed * (1 - failureRate);
-        double internalFailure = consumed * failureRate;
-        
-        ProduceToken(opsNode, TokenType.ValidatedSolutions, validSolutions);
-        ProduceToken(devNode, TokenType.DetailedDemand, internalFailure); 
-        
-        qaNode.LastThroughput = validSolutions;
-    }
-
-    private void ProcessOps()
-    {
-        var opsNode = State.Nodes.First(n => n.NodeType == NodeType.Operations);
-        var supportNode = State.Nodes.First(n => n.NodeType == NodeType.Support);
-        
-        double throughput = GetNodeThroughput(NodeType.Operations) * 7;
-        double consumed = ConsumeQueue(opsNode, TokenType.ValidatedSolutions, throughput);
-        
-        double deployErrorRate = 0.05;
-        double operationalSolutions = consumed * (1 - deployErrorRate);
-        double operationalIncidents = consumed * deployErrorRate;
-
-        ProduceToken(opsNode, TokenType.OperationalSolutions, operationalSolutions);
-        State.TotalFeaturesDelivered += operationalSolutions;
-
-        ProduceToken(supportNode, TokenType.FailureDemand, operationalIncidents);
-        State.TotalIncidents += operationalIncidents;
-        
-        opsNode.LastThroughput = operationalSolutions;
-    }
-
-    private void ProcessSupport()
-    {
-        var supportNode = State.Nodes.First(n => n.NodeType == NodeType.Support);
-        
-        double throughput = GetNodeThroughput(NodeType.Support) * 4;
-        double consumed = ConsumeQueue(supportNode, TokenType.FailureDemand, throughput);
-        
-        ProduceToken(supportNode, TokenType.ResolvedIssues, consumed);
-        supportNode.LastThroughput = consumed;
-    }
-
-    private void UpdateMetrics()
-    {
-        double dailySalaries = State.Employees.Sum(e => e.Salary) / 365.0;
-        State.Funds -= dailySalaries;
-
-        State.Funds += (State.CustomerCount * 2.5); 
-        
-        var supportNode = State.Nodes.First(n => n.NodeType == NodeType.Support);
-        double activeBugs = supportNode.Queue.ContainsKey(TokenType.FailureDemand) ? supportNode.Queue[TokenType.FailureDemand] : 0;
-        
-        State.CustomerSatisfaction -= (activeBugs * 0.001);
-        if(State.CustomerSatisfaction < 0.1) State.CustomerSatisfaction = 0.1;
-        if(activeBugs == 0) State.CustomerSatisfaction += 0.005;
-        if(State.CustomerSatisfaction > 1.0) State.CustomerSatisfaction = 1.0;
-        
-        if (State.CustomerSatisfaction < 0.5)
+        double share = amount / targets.Count;
+        foreach (var target in targets!)
         {
-            State.CustomerCount -= (int)(State.CustomerCount * 0.01); 
+            target!.Queue.TryGetValue(type, out double existing);
+            target.Queue[type] = existing + share;
         }
+    }
+
+    // ─── Global metrics ───────────────────────────────────────────────────────
+
+    private void UpdateGlobalMetrics()
+    {
+        // Salary burn
+        State.Funds -= State.Employees.Sum(e => e.Salary) / 365.0;
+
+        // Satisfaction-driven churn
+        if (State.CustomerSatisfaction < 0.5)
+            State.CustomerCount = Math.Max(0, (int)(State.CustomerCount - State.CustomerCount * 0.01));
     }
 }

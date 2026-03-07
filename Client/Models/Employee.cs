@@ -19,7 +19,7 @@ public class Employee
     public double Productivity { get; set; } = 1.0;
     public double ErrorRate { get; set; } = 0.05;
     public double PracticeKnowledge { get; set; } = 0.0;
-    
+
     public string AssignedNodeId { get; set; } = string.Empty;
     public string Name { get; set; } = "New Employee";
 }

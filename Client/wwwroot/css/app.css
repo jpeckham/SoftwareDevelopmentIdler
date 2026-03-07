@@ -1,115 +1,482 @@
-html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; }
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0b1120;
+    color: #f8fafc;
+    height: 100%;
+    overflow: hidden;
 }
 
-h1:focus {
-    outline: none;
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
-a, .btn-link {
-    color: #0071c1;
+/* ═══════════════════════════════════════════════════════════════
+   TOP BAR
+═══════════════════════════════════════════════════════════════ */
+
+.top-bar {
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 0.55rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 50;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
 }
 
-.btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+.top-bar h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+    background: linear-gradient(90deg, #38bdf8 0%, #818cf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+    user-select: none;
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+.metrics-panel { display: flex; gap: 1.5rem; align-items: center; }
+
+.metric { display: flex; flex-direction: column; align-items: flex-end; }
+.metric-label {
+    font-size: 0.62rem;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+}
+.metric-value { font-size: 0.95rem; font-weight: 700; color: #e2e8f0; }
+.metric-value.positive { color: #34d399; }
+.metric-value.negative { color: #fb7185; }
+
+/* ═══════════════════════════════════════════════════════════════
+   PAGE LAYOUT  (toolbox | canvas)
+═══════════════════════════════════════════════════════════════ */
+
+/* Override scoped MainLayout styles */
+.page { display: flex !important; flex-direction: column !important; flex: 1; overflow: hidden; }
+main  { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+.game-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
 }
 
-.content {
-    padding-top: 1.1rem;
+/* ═══════════════════════════════════════════════════════════════
+   TOOLBOX
+═══════════════════════════════════════════════════════════════ */
+
+.toolbox-panel {
+    width: 210px;
+    flex-shrink: 0;
+    background: #0d1a2d;
+    border-right: 1px solid rgba(255,255,255,0.07);
+    padding: 0.75rem 0.5rem 1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    user-select: none;
 }
 
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+.toolbox-panel::-webkit-scrollbar { width: 4px; }
+.toolbox-panel::-webkit-scrollbar-track { background: transparent; }
+.toolbox-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.toolbox-section-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.5rem 0.5rem 0.25rem;
+    margin-top: 0.25rem;
 }
 
-.invalid {
-    outline: 1px solid red;
+.toolbox-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.5rem;
+    border-radius: 0.45rem;
+    border: 1px solid transparent;
+    cursor: grab;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+    position: relative;
 }
 
-.validation-message {
-    color: red;
+.toolbox-item:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+    transform: translateX(2px);
 }
+
+.toolbox-item:active {
+    cursor: grabbing;
+    opacity: 0.6;
+    transform: scale(0.97);
+}
+
+/* Grab handle — three dots to signal draggability */
+.toolbox-item::before {
+    content: '⠿';
+    font-size: 0.7rem;
+    color: #334155;
+    flex-shrink: 0;
+    transition: color 0.15s;
+}
+.toolbox-item:hover::before { color: #64748b; }
+
+.toolbox-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+}
+
+.toolbox-item-info { display: flex; flex-direction: column; min-width: 0; }
+.toolbox-item-name { font-size: 0.75rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolbox-item-ports { font-size: 0.6rem; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.toolbox-divider {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin: 0.6rem 0.25rem;
+}
+
+.toolbox-legend-title {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.25rem 0.5rem 0.35rem;
+}
+
+.toolbox-token-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.18rem 0.5rem;
+}
+.toolbox-token-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.toolbox-token-row span { font-size: 0.65rem; color: #64748b; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CANVAS AREA
+═══════════════════════════════════════════════════════════════ */
+
+.canvas-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background-color: #080f1e;
+    background-image:
+        radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0);
+    background-size: 32px 32px;
+    min-height: 0;
+}
+
+/* Highlighted when a toolbox item is being dragged over */
+.canvas-area.drag-over {
+    background-color: #0c1628;
+    outline: 2px dashed rgba(56, 189, 248, 0.35);
+    outline-offset: -4px;
+}
+
+.canvas-area.drag-over::after {
+    content: 'Drop to place node';
+    position: absolute;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #38bdf8;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.4rem 1rem;
+    border-radius: 2rem;
+    pointer-events: none;
+    letter-spacing: 0.03em;
+}
+
+/* SVG overlay */
+.canvas-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 5;
+}
+
+/* Empty state */
+.canvas-hint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+.canvas-hint-icon { font-size: 2.5rem; opacity: 0.12; }
+.canvas-hint-main { font-size: 0.85rem; color: #1e293b; font-weight: 500; }
+.canvas-hint-sub  { font-size: 0.7rem;  color: #0f172a; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CANVAS NODES
+═══════════════════════════════════════════════════════════════ */
+
+.canvas-node {
+    position: absolute;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    z-index: 10;
+    transition: filter 0.15s;
+    filter: drop-shadow(0 3px 10px rgba(0,0,0,0.5));
+}
+
+.canvas-node:hover {
+    filter: drop-shadow(0 6px 20px rgba(0,0,0,0.7));
+    z-index: 15;
+}
+
+.canvas-node.dragging {
+    z-index: 20;
+    filter: drop-shadow(0 12px 32px rgba(0,0,0,0.8));
+    opacity: 0.9;
+}
+
+/* ─── Port columns ─── */
+
+.node-ports {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 56px; /* offset past header */
+    position: relative;
+    z-index: 2;
+}
+
+.port-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.port-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    cursor: crosshair;
+    opacity: 0.75;
+    transition: transform 0.12s, opacity 0.12s, box-shadow 0.12s;
+    position: relative;
+}
+
+/* Output port — drag source */
+.port-dot.port-output {
+    cursor: grab;
+}
+.port-dot.port-output::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1px dashed currentColor;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.port-dot.port-output:hover::after { opacity: 0.6; }
+
+.port-dot:hover {
+    transform: scale(1.5);
+    opacity: 1;
+}
+
+/* Input port highlighted as a valid drop target */
+.port-dot.port-target {
+    transform: scale(1.8) !important;
+    opacity: 1 !important;
+    animation: port-pulse 0.7s ease-in-out infinite alternate;
+    cursor: cell;
+}
+
+@keyframes port-pulse {
+    from { box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
+    to   { box-shadow: 0 0 0 6px rgba(255,255,255,0);  }
+}
+
+/* ─── Node body ─── */
+
+.node-body {
+    background: rgba(18, 28, 48, 0.96);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(6px);
+    transition: border-color 0.15s, background 0.15s;
+    min-height: 56px;
+}
+
+.canvas-node:hover .node-body {
+    border-color: rgba(255,255,255,0.2);
+    background: rgba(22, 34, 58, 0.98);
+}
+
+/* Node header — drag handle for repositioning */
+.node-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.55rem;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    cursor: grab;
+    user-select: none;
+    gap: 0.4rem;
+}
+
+.node-header-bar:hover { background: rgba(255,255,255,0.07); }
+.node-header-bar:active { cursor: grabbing; }
+
+/* Grip icon to signal the header is draggable */
+.node-header-bar::before {
+    content: '⠿';
+    font-size: 0.65rem;
+    color: #334155;
+    flex-shrink: 0;
+}
+
+.node-type-name {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #cbd5e1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+.node-delete-btn {
+    background: none;
+    border: none;
+    color: #334155;
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 0 0.1rem;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: color 0.12s, background 0.12s;
+}
+.node-delete-btn:hover {
+    color: #fb7185;
+    background: rgba(251, 113, 133, 0.12);
+}
+
+/* Throughput row */
+.node-throughput {
+    font-size: 0.6rem;
+    color: #334155;
+    padding: 0.2rem 0.55rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Queue chips */
+.node-queue {
+    padding: 0.3rem 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+}
+
+.queue-chip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid;
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.58rem;
+}
+
+.queue-chip-label  { color: #64748b; }
+.queue-chip-amount { font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════════════
+   SVG CONNECTION PATHS
+═══════════════════════════════════════════════════════════════ */
+
+/* Connections become clickable via pointer-events:stroke in markup */
+/* Hover via JS isn't easy — clicking a line deletes it */
+
+/* ═══════════════════════════════════════════════════════════════
+   BOOTSTRAP / BLAZOR OVERRIDES
+═══════════════════════════════════════════════════════════════ */
 
 #blazor-error-ui {
     color-scheme: light only;
-    background: lightyellow;
-    bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
-    box-sizing: border-box;
-    display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    background: #1e0a0a;
+    color: #fb7185;
+    bottom: 0; left: 0;
+    padding: 0.6rem 1.25rem;
     position: fixed;
     width: 100%;
     z-index: 1000;
+    display: none;
+    border-top: 1px solid #fb7185;
+    font-size: 0.8rem;
 }
-
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
-    }
-
-.blazor-error-boundary {
-    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
-    padding: 1rem 1rem 1rem 3.7rem;
-    color: white;
-}
-
-    .blazor-error-boundary::after {
-        content: "An error has occurred."
-    }
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 0.75rem; top: 0.5rem; }
 
 .loading-progress {
     position: absolute;
     display: block;
-    width: 8rem;
-    height: 8rem;
+    width: 8rem; height: 8rem;
     inset: 20vh 0 auto 0;
-    margin: 0 auto 0 auto;
+    margin: 0 auto;
 }
-
-    .loading-progress circle {
-        fill: none;
-        stroke: #e0e0e0;
-        stroke-width: 0.6rem;
-        transform-origin: 50% 50%;
-        transform: rotate(-90deg);
-    }
-
-        .loading-progress circle:last-child {
-            stroke: #1b6ec2;
-            stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
-            transition: stroke-dasharray 0.05s ease-in-out;
-        }
-
+.loading-progress circle {
+    fill: none; stroke: #1e293b; stroke-width: 0.6rem;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+}
+.loading-progress circle:last-child {
+    stroke: #38bdf8;
+    stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+    transition: stroke-dasharray 0.05s ease-in-out;
+}
 .loading-progress-text {
     position: absolute;
     text-align: center;
-    font-weight: bold;
+    font-weight: 700;
+    color: #94a3b8;
     inset: calc(20vh + 3.25rem) 0 auto 0.2rem;
 }
-
-    .loading-progress-text:after {
-        content: var(--blazor-load-percentage-text, "Loading");
-    }
-
-code {
-    color: #c02d76;
-}
-
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-    color: var(--bs-secondary-color);
-    text-align: end;
-}
-
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-    text-align: start;
-}
+.loading-progress-text::after { content: var(--blazor-load-percentage-text, "Loading"); }
