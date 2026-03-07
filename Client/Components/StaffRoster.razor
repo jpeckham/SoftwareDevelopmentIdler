@@ -1,0 +1,45 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.Services
+@inject DragDropService DragService
+@implements IDisposable
+
+<div class="roster-panel" @ondragover="HandleDragOver" @ondragover:preventDefault="true" @ondrop="HandleDrop">
+    <h3 class="roster-title">Bench (Unassigned Staff)</h3>
+    <div class="roster-grid">
+        @foreach (var emp in BenchStaff)
+        {
+            <EmployeeCard Employee="emp" />
+        }
+        @if (BenchStaff.Count == 0)
+        {
+            <div class="empty-roster">No staff available on the bench.</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<Employee> AllEmployees { get; set; } = new();
+
+    private List<Employee> BenchStaff => AllEmployees.Where(e => string.IsNullOrEmpty(e.AssignedNodeId)).ToList();
+
+    protected override void OnInitialized()
+    {
+        DragService.OnStateChange += StateHasChanged;
+    }
+
+    private void HandleDragOver()
+    {
+        // Allows dropping
+    }
+
+    private void HandleDrop()
+    {
+        DragService.Drop(""); // empty string represents unassigned/bench
+    }
+
+    public void Dispose()
+    {
+        DragService.OnStateChange -= StateHasChanged;
+    }
+}

@@ -1,0 +1,36 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.Services
+@inject DragDropService DragService
+
+<div class="employee-card" draggable="true" @ondragstart="HandleDragStart" @ondragend="HandleDragEnd">
+    <div class="emp-avatar">
+        @GetInitials(Employee.Name)
+    </div>
+    <div class="emp-info">
+        <div class="emp-name">@Employee.Name</div>
+        <div class="emp-role">@Employee.Role.ToString() - Lvl @Employee.SkillLevel.ToString("0.0")</div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Employee Employee { get; set; } = default!;
+
+    private void HandleDragStart()
+    {
+        DragService.StartDrag(Employee);
+    }
+
+    private void HandleDragEnd()
+    {
+        // Optional logic when drag finishes
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0].Substring(0, 1).ToUpper();
+        return (parts[0].Substring(0, 1) + parts[1].Substring(0, 1)).ToUpper();
+    }
+}

@@ -1,0 +1,84 @@
+@using SoftwareVSM.Client.Models
+@using SoftwareVSM.Client.Services
+@inject DragDropService DragService
+@implements IDisposable
+
+<div class="glass-panel node-card @((isDragTarget ? "drag-target" : ""))"
+     @ondragover="HandleDragOver"
+     @ondragover:preventDefault="true"
+     @ondragenter="() => isDragTarget = true"
+     @ondragleave="() => isDragTarget = false"
+     @ondrop="HandleDrop">
+
+    <div class="node-header">
+        <h3 class="node-title">
+            <span class="text-violet">⬢</span> @Node.Name
+        </h3>
+        <div style="font-size:0.75rem; color:#64748b; margin-top:0.25rem;">
+            Throughput: @Node.LastThroughput.ToString("0.0") /s
+        </div>
+    </div>
+
+    <div class="queue-list">
+        @if (Node.Queue.Any(q => q.Value > 0))
+        {
+            @foreach (var q in Node.Queue.Where(kvp => kvp.Value > 0.0))
+            {
+                <div class="queue-item">
+                    <span class="queue-label">@q.Key.ToString()</span>
+                    <span class="queue-amount">@Math.Round(q.Value, 1)</span>
+                </div>
+            }
+        }
+        else
+        {
+            <div style="font-size: 0.8rem; color: #475569; text-align: center; padding: 1rem 0;">
+                Queue Empty
+            </div>
+        }
+    </div>
+
+    <div class="staff-section">
+        <div class="staff-count">
+            <div class="staff-icon"></div>
+            @AssignedStaff.Count Assigned Staff
+        </div>
+        <div class="node-staff-grid">
+            @foreach (var emp in AssignedStaff)
+            {
+                <EmployeeCard Employee="emp" />
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Node Node { get; set; } = default!;
+
+    [Parameter]
+    public List<Employee> AssignedStaff { get; set; } = new();
+
+    private bool isDragTarget = false;
+
+    protected override void OnInitialized()
+    {
+        DragService.OnStateChange += StateHasChanged;
+    }
+
+    private void HandleDragOver()
+    {
+        // Require preventDefault on dragover to enable dropping
+    }
+
+    private void HandleDrop()
+    {
+        isDragTarget = false;
+        DragService.Drop(Node.Id);
+    }
+
+    public void Dispose()
+    {
+        DragService.OnStateChange -= StateHasChanged;
+    }
+}
