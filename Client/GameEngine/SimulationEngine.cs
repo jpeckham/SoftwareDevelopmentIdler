@@ -19,6 +19,7 @@ public class SimulationEngine
 
     private const double DemandPerCustomer  = 0.05;  // demand tokens per customer per tick
     private const double BaseThroughput     = 5.0;   // tokens per tick (no staff modifier yet)
+    private const double FlowConstant       = 20.0;  // queue size at which throughput halves
 
     public SimulationEngine()
     {
@@ -80,7 +81,8 @@ public class SimulationEngine
     /// Generic 1-to-1 transform: consume inputType, produce outputType.
     private void ProcessTransform(Node node, TokenType input, TokenType output, double efficiency)
     {
-        double consumed = Consume(node, input, BaseThroughput);
+        double capacity = GetNodeCapacity(node);
+        double consumed = Consume(node, input, capacity);
         if (consumed <= 0) return;
         PushOutput(node, output, consumed * efficiency);
         node.LastThroughput = consumed;
@@ -90,16 +92,21 @@ public class SimulationEngine
     /// Technical debt slows throughput and worsens defect rate.
     private void ProcessDevelopment(Node node)
     {
-        double debtPenalty = Math.Max(0.1, 1.0 - State.TechnicalDebt / 10_000.0);
-        double capacity    = BaseThroughput * debtPenalty;
+        double capacity = GetNodeCapacity(node);
 
-        double features = Consume(node, TokenType.Feature, capacity);
-        double rework   = Consume(node, TokenType.Defect,  capacity * 0.5);
+        // TDD reduces defect rate and tech debt accrual
+        double tddAdoption  = State.Practices.FirstOrDefault(p => p.Type == PracticeType.TDD)?.AdoptionLevel ?? 0;
+        double defectRate   = 0.05 * (1.0 - 0.40 * tddAdoption);
+        double techDebtRate = 0.05 * (1.0 - 0.25 * tddAdoption);
+
+        double features = Consume(node, TokenType.Feature,  capacity);
+        double rework   = Consume(node, TokenType.Defect,   capacity * 0.5);
+        _               = ConsumeAll(node, TokenType.TechDebt); // consume but don't transform
         double produced = features + rework;
 
         if (produced <= 0) return;
 
-        double techDebtAccrued = produced * 0.05;
+        double techDebtAccrued = produced * techDebtRate;
         State.TechnicalDebt += techDebtAccrued;
         PushOutput(node, TokenType.Code,     produced);
         PushOutput(node, TokenType.TechDebt, techDebtAccrued);
@@ -112,7 +119,8 @@ public class SimulationEngine
     /// Escaped defects become Incidents via Operations.
     private void ProcessQuality(Node node)
     {
-        double code = Consume(node, TokenType.Code, BaseThroughput);
+        double capacity = GetNodeCapacity(node);
+        double code     = Consume(node, TokenType.Code, capacity);
         if (code <= 0) return;
 
         double defectDensity   = State.TechnicalDebt / 50_000.0;
@@ -133,10 +141,15 @@ public class SimulationEngine
     /// Operations: deploys ValidatedCode → RunningSoftware + Incidents from escaped defects.
     private void ProcessOperations(Node node)
     {
-        double validated = Consume(node, TokenType.ValidatedCode, BaseThroughput);
+        double capacity  = GetNodeCapacity(node); // includes InfraModifier
+        double validated = Consume(node, TokenType.ValidatedCode, capacity);
         if (validated <= 0) return;
 
-        double incidents = validated * BaseEscapedDefectRate * (1.0 + State.TechnicalDebt / 100_000.0);
+        // CI practice reduces incident rate
+        double ciAdoption   = State.Practices.FirstOrDefault(p => p.Type == PracticeType.ContinuousIntegration)?.AdoptionLevel ?? 0;
+        double incidentRate = BaseEscapedDefectRate * (1.0 - 0.20 * ciAdoption) * (1.0 + State.TechnicalDebt / 100_000.0);
+        double incidents    = validated * incidentRate;
+
         PushOutput(node, TokenType.RunningSoftware, validated);
         if (incidents > 0.0001)
             PushOutput(node, TokenType.Incident, incidents);
@@ -147,7 +160,8 @@ public class SimulationEngine
     /// Support: Incident → Defect (back to dev) + Opportunity (recovered demand).
     private void ProcessSupport(Node node)
     {
-        double resolved = Consume(node, TokenType.Incident, BaseThroughput * 2);
+        double capacity = GetNodeCapacity(node);
+        double resolved = Consume(node, TokenType.Incident, capacity * 2);
         if (resolved <= 0) return;
 
         PushOutput(node, TokenType.Defect,      resolved * 0.6);
@@ -156,6 +170,75 @@ public class SimulationEngine
         State.CustomerSatisfaction -= resolved * 0.002;
         State.CustomerSatisfaction  = Math.Max(0.1, State.CustomerSatisfaction);
         node.LastThroughput = resolved;
+    }
+
+    // ─── Capacity helpers ─────────────────────────────────────────────────────
+
+    private double GetNodeCapacity(Node node)
+    {
+        int staffCount = State.Employees.Count(e => e.AssignedNodeId == node.Id);
+
+        double practiceModifier = GetPracticeModifier(node);
+        double infraModifier    = node.NodeType == NodeType.Operations
+                                  ? GetInfraModifier()
+                                  : 1.0;
+        double debtPenalty      = node.NodeType == NodeType.Development
+                                  ? State.TechnicalDebt / 10_000.0
+                                  : 0.0;
+
+        double totalQueueSize   = node.Queue.Values.Sum();
+
+        double nodeCapacity     = Math.Max(0,
+                                    BaseThroughput
+                                    * (1.0 + staffCount * 0.5)
+                                    * practiceModifier
+                                    * infraModifier
+                                    - debtPenalty);
+
+        double effectiveCapacity = nodeCapacity / (1.0 + totalQueueSize / FlowConstant);
+
+        return Math.Max(0, effectiveCapacity);
+    }
+
+    private double GetInfraModifier() => State.Infrastructure switch
+    {
+        InfrastructureTier.OnPrem      => 1.0,
+        InfrastructureTier.CloudVM     => 1.5,
+        InfrastructureTier.Autoscaling => 2.5,
+        InfrastructureTier.EdgeNetwork => 4.0,
+        _ => 1.0
+    };
+
+    private double GetPracticeModifier(Node node)
+    {
+        double modifier = 1.0;
+        foreach (var practice in State.Practices)
+        {
+            double adoption = practice.AdoptionLevel;
+            if (adoption <= 0) continue;
+
+            modifier += practice.Type switch
+            {
+                // TDD: Dev gets speed penalty but defect rate drops (handled in ProcessDevelopment)
+                PracticeType.TDD when node.NodeType == NodeType.Development
+                    => -0.10 * adoption,
+
+                // CI: Operations throughput boost
+                PracticeType.ContinuousIntegration when node.NodeType == NodeType.Operations
+                    => 0.30 * adoption,
+
+                // CD: Quality throughput boost
+                PracticeType.ContinuousDelivery when node.NodeType == NodeType.Quality
+                    => 0.25 * adoption,
+
+                // DevOpsCulture: Support throughput boost (faster incident resolution)
+                PracticeType.DevOpsCulture when node.NodeType == NodeType.Support
+                    => 0.40 * adoption,
+
+                _ => 0.0
+            };
+        }
+        return Math.Max(0.1, modifier); // never reduce to zero
     }
 
     // ─── Queue helpers ────────────────────────────────────────────────────────
