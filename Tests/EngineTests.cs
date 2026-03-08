@@ -25,15 +25,14 @@ public class EngineTests
 
         state.Nodes.AddRange([market, pm, ba, dev, ops, compute, users, support]);
 
-        Connect(state, market,  TokenType.Demand,              pm,      TokenType.Demand);
-        Connect(state, pm,      TokenType.Features,            ba,      TokenType.Features);
-        Connect(state, ba,      TokenType.UserStories,         dev,     TokenType.UserStories);
-        Connect(state, dev,     TokenType.Software,            ops,     TokenType.Software);
-        Connect(state, ops,     TokenType.DeployableArtifacts, compute, TokenType.DeployableArtifacts);
-        Connect(state, compute, TokenType.WorkProduct,         users,   TokenType.WorkProduct);
-        Connect(state, users,   TokenType.Incidents,           support, TokenType.Incidents);
-        Connect(state, support, TokenType.FailureDemand,       dev,     TokenType.FailureDemand);
-        Connect(state, support, TokenType.Dissatisfaction,     market,  TokenType.Dissatisfaction);
+        Connect(state, market,  TokenType.Opportunity,    pm,      TokenType.Opportunity);
+        Connect(state, pm,      TokenType.Feature,         ba,      TokenType.Feature);
+        Connect(state, ba,      TokenType.Feature,         dev,     TokenType.Feature);
+        Connect(state, dev,     TokenType.Code,            ops,     TokenType.Code);
+        Connect(state, ops,     TokenType.ValidatedCode,   compute, TokenType.ValidatedCode);
+        Connect(state, compute, TokenType.RunningSoftware, users,   TokenType.RunningSoftware);
+        Connect(state, users,   TokenType.Incident,        support, TokenType.Incident);
+        Connect(state, support, TokenType.Defect,          dev,     TokenType.Defect);
 
         return engine;
     }
@@ -72,13 +71,12 @@ public class EngineTests
     public void NodeFactory_Creates_Correct_Ports()
     {
         var market = NodeFactory.Create(NodeType.Market);
-        Assert.Contains(market.OutputPorts, p => p.TokenType == TokenType.Demand);
-        Assert.Contains(market.InputPorts,  p => p.TokenType == TokenType.Dissatisfaction);
+        Assert.Contains(market.OutputPorts, p => p.TokenType == TokenType.Opportunity);
 
         var dev = NodeFactory.Create(NodeType.Development);
-        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.UserStories);
-        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.FailureDemand);
-        Assert.Contains(dev.OutputPorts, p => p.TokenType == TokenType.Software);
+        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.Feature);
+        Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.Defect);
+        Assert.Contains(dev.OutputPorts, p => p.TokenType == TokenType.Code);
     }
 
     [Fact]
@@ -140,7 +138,7 @@ public class EngineTests
         var market = NodeFactory.Create(NodeType.Market,            0, 0);
         var pm     = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
         engine.State.Nodes.AddRange([market, pm]);
-        Connect(engine.State, market, TokenType.Demand, pm, TokenType.Demand);
+        Connect(engine.State, market, TokenType.Opportunity, pm, TokenType.Opportunity);
 
         engine.ManualTick();
 

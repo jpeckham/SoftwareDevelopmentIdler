@@ -33,15 +33,15 @@ public static class CanvasLayout
     /// Token type → accent colour (used by both SVG paths and port dots).
     public static string TokenColor(TokenType type) => type switch
     {
-        TokenType.Demand              => "#f59e0b",   // amber
-        TokenType.Features            => "#3b82f6",   // blue
-        TokenType.UserStories         => "#8b5cf6",   // violet
-        TokenType.Software            => "#10b981",   // emerald
-        TokenType.DeployableArtifacts => "#06b6d4",   // cyan
-        TokenType.WorkProduct         => "#22c55e",   // green
-        TokenType.Incidents           => "#ef4444",   // red
-        TokenType.FailureDemand       => "#f97316",   // orange
-        TokenType.Dissatisfaction     => "#ec4899",   // pink
+        TokenType.Opportunity    => "#f59e0b",   // amber
+        TokenType.Feature        => "#3b82f6",   // blue
+        TokenType.Code           => "#10b981",   // emerald
+        TokenType.ValidatedCode  => "#06b6d4",   // cyan
+        TokenType.RunningSoftware => "#22c55e",  // green
+        TokenType.Defect         => "#f97316",   // orange
+        TokenType.Incident       => "#ef4444",   // red
+        TokenType.TechDebt       => "#b91c1c",   // dark red
+        TokenType.Revenue        => "#16a34a",   // dark green
         _ => "#94a3b8"
     };
 }
