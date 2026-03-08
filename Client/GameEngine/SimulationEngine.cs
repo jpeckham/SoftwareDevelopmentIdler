@@ -96,7 +96,6 @@ public class SimulationEngine
 
         // TDD reduces defect rate and tech debt accrual
         double tddAdoption  = State.Practices.FirstOrDefault(p => p.Type == PracticeType.TDD)?.AdoptionLevel ?? 0;
-        double defectRate   = 0.05 * (1.0 - 0.40 * tddAdoption);
         double techDebtRate = 0.05 * (1.0 - 0.25 * tddAdoption);
 
         double features = Consume(node, TokenType.Feature,  capacity);
@@ -182,9 +181,9 @@ public class SimulationEngine
         double infraModifier    = node.NodeType == NodeType.Operations
                                   ? GetInfraModifier()
                                   : 1.0;
-        double debtPenalty      = node.NodeType == NodeType.Development
-                                  ? State.TechnicalDebt / 10_000.0
-                                  : 0.0;
+        double debtMultiplier   = node.NodeType == NodeType.Development
+                                  ? Math.Max(0.1, 1.0 - State.TechnicalDebt / 50_000.0)
+                                  : 1.0;
 
         double totalQueueSize   = node.Queue.Values.Sum();
 
@@ -193,7 +192,7 @@ public class SimulationEngine
                                     * (1.0 + staffCount * 0.5)
                                     * practiceModifier
                                     * infraModifier
-                                    - debtPenalty);
+                                    * debtMultiplier);
 
         double effectiveCapacity = nodeCapacity / (1.0 + totalQueueSize / FlowConstant);
 
@@ -217,6 +216,8 @@ public class SimulationEngine
             double adoption = practice.AdoptionLevel;
             if (adoption <= 0) continue;
 
+            // Note: Agile practice type is a placeholder for future implementation (see PracticeType enum).
+            // It currently has no direct throughput modifier wired here.
             modifier += practice.Type switch
             {
                 // TDD: Dev gets speed penalty but defect rate drops (handled in ProcessDevelopment)
