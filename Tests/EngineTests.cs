@@ -95,7 +95,7 @@ public class EngineTests
     }
 
     [Fact]
-    public void Market_Generates_Demand_Each_Tick()
+    public void CustomerDiscovery_Generates_Demand_Each_Tick()
     {
         var engine = BuildConnectedPipeline();
         engine.ManualTick();
@@ -148,14 +148,18 @@ public class EngineTests
 
         engine.ManualTick();
 
-        Assert.True(engine.State.TotalDemandReceived > 0);
+        // TotalDemandReceived is set before routing — check PM actually received tokens
+        Assert.True(engine.State.TotalDemandReceived > 0, "CustomerDiscovery must generate Opportunity");
+        Assert.True(pm.Queue.ContainsKey(TokenType.Opportunity) || pm.LastThroughput > 0,
+            "PM must have received Opportunity tokens via the connection");
     }
 
     [Fact]
-    public void Golden_Full_Pipeline_Flows_Opportunity_To_Revenue()
+    public void Golden_Full_Pipeline_Core_Loops_Active()
     {
-        // This test must always pass. If it fails, the core feature loop is broken.
-        // Opportunity → Feature → Code → ValidatedCode → Operations → Incidents
+        // Core diagnostic: if this fails, the main simulation loop is broken.
+        // Note: TotalRevenue is not asserted here — revenue requires RunningSoftware to reach
+        // the environment actor via a connected sink node (not present in this test pipeline).
         var engine = BuildConnectedPipeline();
 
         for (int i = 0; i < 20; i++)
@@ -187,5 +191,7 @@ public class EngineTests
         engine.ManualTick(); // quality processes Code, produces Defect + ValidatedCode
 
         Assert.True(state.TotalBugsGenerated > 0, "Quality should have detected defects");
+        Assert.True(dev.Queue.ContainsKey(TokenType.Defect) && dev.Queue[TokenType.Defect] > 0,
+            "Detected defects must be routed back to Development queue");
     }
 }
