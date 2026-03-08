@@ -1,0 +1,28 @@
+name: Sync README Status Badges
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - README.md
+      - .github/workflows/continuous-delivery-dotnet-blazor-github-pages.yml
+      - .github/workflows/sync-readme-status-badges.yml
+      - .github/badges/coverage.svg
+
+permissions:
+  contents: write
+
+jobs:
+  sync-readme-badges:
+    uses: jpeckham/.github/.github/workflows/sync-readme-status-badges.yml@main
+    with:
+      workflow_file: continuous-delivery-dotnet-blazor-github-pages.yml
+      readme_path: README.md
+      section_header: Status Badges
+      start_marker: '<!-- badges:start -->'
+      end_marker: '<!-- badges:end -->'
+      coverage_badge_path: .github/badges/coverage.svg
+      coverage_link_url: https://jpeckham.github.io/SoftwareDevelopmentIdler/coverage/
+      main_branch: main
+    secrets: inherit

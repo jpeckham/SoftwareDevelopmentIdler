@@ -1,0 +1,27 @@
+name: Continuous Delivery
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  continuous-delivery:
+    uses: jpeckham/.github/.github/workflows/continuous-delivery-dotnet-blazor-github-pages.yml@main
+    with:
+      main_branch: main
+      dotnet_version: 10.0.x
+      solution_path: SoftwareDevelopmentIdler.sln
+      test_project_path: Tests/SoftwareVSM.Tests.csproj
+      publish_project_path: Client/SoftwareVSM.Client.csproj
+      publish_output_dir: publish
+      version_file: version.json
+      coverage_badge_path: .github/badges/coverage.svg
+      coverage_pages_subpath: coverage
+    secrets: inherit
