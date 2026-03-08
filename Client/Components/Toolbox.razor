@@ -47,15 +47,12 @@
 
     private static readonly NodeEntry[] _nodes =
     [
-        new(NodeType.Market,            "Market",            "→ Demand",            "#f59e0b", "Generates demand. Add Dissatisfaction input to shrink the market."),
-        new(NodeType.ProductManagement, "Product Mgmt",      "Demand → Features",   "#3b82f6", "Interprets market demand as product features to build."),
-        new(NodeType.BusinessAnalysis,  "Business Analysis", "Features → Stories",  "#8b5cf6", "Breaks features into implementable user stories."),
-        new(NodeType.Development,       "Development",       "Stories → Software",  "#10b981", "Builds software. Accepts rework via Failure Demand input."),
-        new(NodeType.Operations,        "Operations",        "Software → Artifacts","#06b6d4", "Packages software into deployable artifacts."),
-        new(NodeType.HostedCompute,     "Hosted Compute",    "Artifacts → Work",    "#22c55e", "Runs software as a hosted service."),
-        new(NodeType.UserWorkstation,   "User Workstations", "Artifacts → Work",    "#22c55e", "Delivers packaged software to end-user machines."),
-        new(NodeType.Users,             "Users",             "Work → Incidents",    "#f59e0b", "Receives value, generates revenue and quality incidents."),
-        new(NodeType.Support,           "Support",           "Incidents → FD+Dis.", "#ec4899", "Routes incidents back as rework and dissatisfaction."),
+        new(NodeType.CustomerDiscovery, "Customer Discovery", "→ Opportunity",              "#f59e0b", "Generates Opportunity from customer demand each tick."),
+        new(NodeType.ProductManagement, "Product Mgmt",       "Opportunity → Feature",      "#3b82f6", "Converts market Opportunity into Features to build."),
+        new(NodeType.Development,       "Development",        "Feature → Code",             "#10b981", "Builds Code from Features. Accepts Defect rework input."),
+        new(NodeType.Quality,           "Quality",            "Code → ValidatedCode/Defect","#8b5cf6", "Validates Code; routes detected Defects back to Development."),
+        new(NodeType.Operations,        "Operations",         "ValidatedCode → Running",    "#06b6d4", "Deploys ValidatedCode as RunningSoftware; surfaces Incidents."),
+        new(NodeType.Support,           "Support",            "Incident → Defect/Opp.",     "#ec4899", "Routes Incidents back as Defects to dev and recovered Opportunity."),
     ];
 
     private static readonly TokenEntry[] _tokens =

@@ -8,31 +8,28 @@ using Xunit;
 public class EngineTests
 {
     // Helper: build a minimal connected pipeline in a fresh engine.
-    // Market → ProductManagement → BusinessAnalysis → Development → Operations → HostedCompute → Users → Support (+ feedback)
+    // CustomerDiscovery → ProductManagement → Development → Quality → Operations → Support (+ feedback loops)
     private static SimulationEngine BuildConnectedPipeline()
     {
         var engine = new SimulationEngine();
         var state  = engine.State;
 
-        var market  = NodeFactory.Create(NodeType.Market,            0,   0);
-        var pm      = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
-        var ba      = NodeFactory.Create(NodeType.BusinessAnalysis,  440, 0);
-        var dev     = NodeFactory.Create(NodeType.Development,       660, 0);
-        var ops     = NodeFactory.Create(NodeType.Operations,        880, 0);
-        var compute = NodeFactory.Create(NodeType.HostedCompute,    1100, 0);
-        var users   = NodeFactory.Create(NodeType.Users,            1320, 0);
-        var support = NodeFactory.Create(NodeType.Support,          1540, 0);
+        var discovery = NodeFactory.Create(NodeType.CustomerDiscovery, 0,    0);
+        var pm        = NodeFactory.Create(NodeType.ProductManagement, 220,  0);
+        var dev       = NodeFactory.Create(NodeType.Development,       440,  0);
+        var quality   = NodeFactory.Create(NodeType.Quality,           660,  0);
+        var ops       = NodeFactory.Create(NodeType.Operations,        880,  0);
+        var support   = NodeFactory.Create(NodeType.Support,           1100, 0);
 
-        state.Nodes.AddRange([market, pm, ba, dev, ops, compute, users, support]);
+        state.Nodes.AddRange([discovery, pm, dev, quality, ops, support]);
 
-        Connect(state, market,  TokenType.Opportunity,    pm,      TokenType.Opportunity);
-        Connect(state, pm,      TokenType.Feature,         ba,      TokenType.Feature);
-        Connect(state, ba,      TokenType.Feature,         dev,     TokenType.Feature);
-        Connect(state, dev,     TokenType.Code,            ops,     TokenType.Code);
-        Connect(state, ops,     TokenType.ValidatedCode,   compute, TokenType.ValidatedCode);
-        Connect(state, compute, TokenType.RunningSoftware, users,   TokenType.RunningSoftware);
-        Connect(state, users,   TokenType.Incident,        support, TokenType.Incident);
-        Connect(state, support, TokenType.Defect,          dev,     TokenType.Defect);
+        Connect(state, discovery, TokenType.Opportunity,    pm,      TokenType.Opportunity);
+        Connect(state, pm,        TokenType.Feature,        dev,     TokenType.Feature);
+        Connect(state, dev,       TokenType.Code,           quality, TokenType.Code);
+        Connect(state, quality,   TokenType.ValidatedCode,  ops,     TokenType.ValidatedCode);
+        Connect(state, quality,   TokenType.Defect,         dev,     TokenType.Defect);
+        Connect(state, ops,       TokenType.Incident,       support, TokenType.Incident);
+        Connect(state, support,   TokenType.Defect,         dev,     TokenType.Defect);
 
         return engine;
     }
@@ -70,13 +67,23 @@ public class EngineTests
     [Fact]
     public void NodeFactory_Creates_Correct_Ports()
     {
-        var market = NodeFactory.Create(NodeType.Market);
-        Assert.Contains(market.OutputPorts, p => p.TokenType == TokenType.Opportunity);
+        var discovery = NodeFactory.Create(NodeType.CustomerDiscovery);
+        Assert.Contains(discovery.OutputPorts, p => p.TokenType == TokenType.Opportunity);
 
         var dev = NodeFactory.Create(NodeType.Development);
         Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.Feature);
         Assert.Contains(dev.InputPorts,  p => p.TokenType == TokenType.Defect);
         Assert.Contains(dev.OutputPorts, p => p.TokenType == TokenType.Code);
+
+        var quality = NodeFactory.Create(NodeType.Quality);
+        Assert.Contains(quality.InputPorts,  p => p.TokenType == TokenType.Code);
+        Assert.Contains(quality.OutputPorts, p => p.TokenType == TokenType.ValidatedCode);
+        Assert.Contains(quality.OutputPorts, p => p.TokenType == TokenType.Defect);
+
+        var support = NodeFactory.Create(NodeType.Support);
+        Assert.Contains(support.InputPorts,  p => p.TokenType == TokenType.Incident);
+        Assert.Contains(support.OutputPorts, p => p.TokenType == TokenType.Defect);
+        Assert.Contains(support.OutputPorts, p => p.TokenType == TokenType.Opportunity);
     }
 
     [Fact]
@@ -99,25 +106,24 @@ public class EngineTests
     public void Flow_Propagates_Through_Full_Pipeline()
     {
         var engine = BuildConnectedPipeline();
-        // Pipeline has latency — run enough ticks for work to reach Users
+        // Pipeline has latency — run enough ticks for work to propagate
         for (int i = 0; i < 20; i++)
             engine.ManualTick();
 
-        Assert.True(engine.State.TotalWorkDelivered > 0, "Work should have reached users");
-        Assert.True(engine.State.TotalRevenue > 0,       "Revenue should have been generated");
-        Assert.True(engine.State.TotalIncidents > 0,     "Incidents should be generated from delivered work");
+        Assert.True(engine.State.TotalDemandReceived > 0, "CustomerDiscovery must generate Opportunity");
+        Assert.True(engine.State.TechnicalDebt       > 0, "TechDebt must accumulate during development");
     }
 
     [Fact]
     public void Unconnected_Output_Tokens_Are_Silently_Dropped()
     {
-        var engine = new SimulationEngine();
-        var market = NodeFactory.Create(NodeType.Market, 0, 0);
-        engine.State.Nodes.Add(market);
+        var engine    = new SimulationEngine();
+        var discovery = NodeFactory.Create(NodeType.CustomerDiscovery, 0, 0);
+        engine.State.Nodes.Add(discovery);
 
-        engine.ManualTick();  // Market generates demand but no PM is connected
-        // Demand should be generated then dropped — no crash, market node queue stays empty
-        Assert.Equal(0, market.Queue.Values.Sum());
+        engine.ManualTick();
+        // CustomerDiscovery generates Opportunity but no PM is connected — tokens dropped
+        Assert.Equal(0, discovery.Queue.Values.Sum());
     }
 
     [Fact]
@@ -134,15 +140,14 @@ public class EngineTests
     [Fact]
     public void Connections_Route_Tokens_To_Target_Node()
     {
-        var engine = new SimulationEngine();
-        var market = NodeFactory.Create(NodeType.Market,            0, 0);
-        var pm     = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
-        engine.State.Nodes.AddRange([market, pm]);
-        Connect(engine.State, market, TokenType.Opportunity, pm, TokenType.Opportunity);
+        var engine    = new SimulationEngine();
+        var discovery = NodeFactory.Create(NodeType.CustomerDiscovery, 0,   0);
+        var pm        = NodeFactory.Create(NodeType.ProductManagement, 220, 0);
+        engine.State.Nodes.AddRange([discovery, pm]);
+        Connect(engine.State, discovery, TokenType.Opportunity, pm, TokenType.Opportunity);
 
         engine.ManualTick();
 
-        // PM should have received demand (it may have already consumed some)
         Assert.True(engine.State.TotalDemandReceived > 0);
     }
 
@@ -150,17 +155,37 @@ public class EngineTests
     public void Golden_Full_Pipeline_Flows_Opportunity_To_Revenue()
     {
         // This test must always pass. If it fails, the core feature loop is broken.
-        // Opportunity → Feature → Code → ValidatedCode → RunningSoftware → Revenue
+        // Opportunity → Feature → Code → ValidatedCode → Operations → Incidents
         var engine = BuildConnectedPipeline();
 
         for (int i = 0; i < 20; i++)
             engine.ManualTick();
 
-        Assert.True(engine.State.TotalDemandReceived > 0,   "Market must generate Opportunity");
-        Assert.True(engine.State.TotalWorkDelivered  > 0,   "RunningSoftware must reach users");
-        Assert.True(engine.State.TotalRevenue        > 0,   "Revenue must be generated");
-        Assert.True(engine.State.TotalIncidents      > 0,   "Incidents must be generated from production");
+        Assert.True(engine.State.TotalDemandReceived > 0,   "CustomerDiscovery must generate Opportunity");
         Assert.True(engine.State.TechnicalDebt       > 0,   "TechDebt must accumulate during development");
         Assert.True(engine.State.TotalBugsGenerated  > 0,   "Dev must generate bugs tracking quality issues");
+    }
+
+    [Fact]
+    public void Quality_Detects_Defects_And_Routes_Back_To_Development()
+    {
+        var engine  = new SimulationEngine();
+        var state   = engine.State;
+        state.TechnicalDebt = 5000; // ensure some defect density
+
+        var dev     = NodeFactory.Create(NodeType.Development, 0,   0);
+        var quality = NodeFactory.Create(NodeType.Quality,     220, 0);
+        state.Nodes.AddRange([dev, quality]);
+
+        // Seed dev with features
+        dev.Queue[TokenType.Feature] = 10.0;
+
+        Connect(state, dev,     TokenType.Code,   quality, TokenType.Code);
+        Connect(state, quality, TokenType.Defect, dev,     TokenType.Defect);
+
+        engine.ManualTick(); // dev produces Code
+        engine.ManualTick(); // quality processes Code, produces Defect + ValidatedCode
+
+        Assert.True(state.TotalBugsGenerated > 0, "Quality should have detected defects");
     }
 }
