@@ -34,46 +34,46 @@ public static class NodeFactory
         switch (node.NodeType)
         {
             case NodeType.Market:
-                Out(node, TokenType.Demand, "Demand");
-                In(node,  TokenType.Dissatisfaction, "Dissatisfaction");
+                Out(node, TokenType.Opportunity, "Opportunity");
                 break;
 
             case NodeType.ProductManagement:
-                In(node,  TokenType.Demand,    "Demand");
-                Out(node, TokenType.Features,  "Features");
+                In(node,  TokenType.Opportunity, "Opportunity");
+                Out(node, TokenType.Feature,     "Feature");
                 break;
 
             case NodeType.BusinessAnalysis:
-                In(node,  TokenType.Features,    "Features");
-                Out(node, TokenType.UserStories, "User Stories");
+                In(node,  TokenType.Feature, "Feature");
+                Out(node, TokenType.Feature, "Feature");
                 break;
 
             case NodeType.Development:
-                In(node,  TokenType.UserStories,   "User Stories");
-                In(node,  TokenType.FailureDemand, "Failure Demand");
-                Out(node, TokenType.Software,      "Software");
+                In(node,  TokenType.Feature,  "Feature");
+                In(node,  TokenType.Defect,   "Defect");
+                Out(node, TokenType.Code,     "Code");
+                Out(node, TokenType.TechDebt, "Tech Debt");
                 break;
 
             case NodeType.Operations:
-                In(node,  TokenType.Software,            "Software");
-                Out(node, TokenType.DeployableArtifacts, "Deployable Artifacts");
+                In(node,  TokenType.Code,            "Code");
+                Out(node, TokenType.ValidatedCode,   "Validated Code");
                 break;
 
             case NodeType.HostedCompute:
             case NodeType.UserWorkstation:
-                In(node,  TokenType.DeployableArtifacts, "Deployable Artifacts");
-                Out(node, TokenType.WorkProduct,         "Work Product");
+                In(node,  TokenType.ValidatedCode,   "Validated Code");
+                Out(node, TokenType.RunningSoftware, "Running Software");
                 break;
 
             case NodeType.Users:
-                In(node,  TokenType.WorkProduct, "Work Product");
-                Out(node, TokenType.Incidents,   "Incidents");
+                In(node,  TokenType.RunningSoftware, "Running Software");
+                Out(node, TokenType.Incident,        "Incident");
                 break;
 
             case NodeType.Support:
-                In(node,  TokenType.Incidents,      "Incidents");
-                Out(node, TokenType.FailureDemand,  "Failure Demand");
-                Out(node, TokenType.Dissatisfaction,"Dissatisfaction");
+                In(node,  TokenType.Incident,    "Incident");
+                Out(node, TokenType.Defect,      "Defect");
+                Out(node, TokenType.Opportunity, "Opportunity");
                 break;
         }
     }
