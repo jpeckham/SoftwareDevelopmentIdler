@@ -103,7 +103,6 @@ public class SimulationEngine
         State.TechnicalDebt += techDebtAccrued;
         PushOutput(node, TokenType.Code,     produced);
         PushOutput(node, TokenType.TechDebt, techDebtAccrued);
-        State.TotalBugsGenerated += produced * 0.1;
         node.LastThroughput = produced;
     }
 
@@ -118,10 +117,10 @@ public class SimulationEngine
 
         double defectDensity   = State.TechnicalDebt / 50_000.0;
         double totalDefects    = code * defectDensity;
-        double detectedDefects = totalDefects * BaseDetectionRate;
-        double validatedCode   = code - detectedDefects;
+        double detectedDefects = Math.Min(totalDefects * BaseDetectionRate, code);
+        double validatedCode   = Math.Max(0, code - detectedDefects);
 
-        PushOutput(node, TokenType.ValidatedCode, Math.Max(0, validatedCode));
+        PushOutput(node, TokenType.ValidatedCode, validatedCode);
         if (detectedDefects > 0.0001)
             PushOutput(node, TokenType.Defect, detectedDefects);
 
