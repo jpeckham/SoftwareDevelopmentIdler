@@ -194,4 +194,49 @@ public class EngineTests
         Assert.True(dev.Queue.ContainsKey(TokenType.Defect) && dev.Queue[TokenType.Defect] > 0,
             "Detected defects must be routed back to Development queue");
     }
+
+    [Fact]
+    public void Higher_Infrastructure_Tier_Increases_Operations_Throughput()
+    {
+        var engineBase  = new SimulationEngine();
+        var engineCloud = new SimulationEngine();
+        engineCloud.State.Infrastructure = InfrastructureTier.CloudVM;
+
+        // Seed both with ValidatedCode at Operations
+        var opsBase  = NodeFactory.Create(NodeType.Operations, 0, 0);
+        var opsCloud = NodeFactory.Create(NodeType.Operations, 0, 0);
+        engineBase.State.Nodes.Add(opsBase);
+        engineCloud.State.Nodes.Add(opsCloud);
+
+        opsBase.Queue[TokenType.ValidatedCode]  = 50.0;
+        opsCloud.Queue[TokenType.ValidatedCode] = 50.0;
+
+        engineBase.ManualTick();
+        engineCloud.ManualTick();
+
+        Assert.True(opsCloud.LastThroughput > opsBase.LastThroughput,
+            "CloudVM should process more ValidatedCode per tick than OnPrem");
+    }
+
+    [Fact]
+    public void High_Queue_Reduces_Effective_Throughput()
+    {
+        var engine = new SimulationEngine();
+        var dev    = NodeFactory.Create(NodeType.Development, 0, 0);
+        engine.State.Nodes.Add(dev);
+
+        // Small queue — get throughput
+        dev.Queue[TokenType.Feature] = 5.0;
+        engine.ManualTick();
+        double throughputSmallQueue = dev.LastThroughput;
+        dev.Queue.Clear(); // reset
+
+        // Large queue — throughput should be lower due to queue pressure
+        dev.Queue[TokenType.Feature] = 200.0;
+        engine.ManualTick();
+        double throughputLargeQueue = dev.LastThroughput;
+
+        Assert.True(throughputSmallQueue > throughputLargeQueue,
+            "Small queue should have higher throughput than large queue (queue pressure formula)");
+    }
 }
