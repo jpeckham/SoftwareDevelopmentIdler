@@ -19,8 +19,6 @@ public class SimulationEngine
 
     private const double DemandPerCustomer  = 0.05;  // demand tokens per customer per tick
     private const double BaseThroughput     = 5.0;   // tokens per tick (no staff modifier yet)
-    private const double BaseIncidentRate   = 0.15;  // incidents per work-product unit
-    private const double RevenuePerWork     = 2.5;   // revenue per work-product unit per customer
 
     public SimulationEngine()
     {
@@ -59,22 +57,19 @@ public class SimulationEngine
     {
         switch (node.NodeType)
         {
-            case NodeType.Market:            ProcessMarket(node);       break;
-            case NodeType.ProductManagement: ProcessTransform(node, TokenType.Opportunity, TokenType.Feature,        1.0); break;
-            case NodeType.BusinessAnalysis:  ProcessTransform(node, TokenType.Feature,     TokenType.Feature,        1.0); break;
-            case NodeType.Development:       ProcessDevelopment(node);  break;
-            case NodeType.Operations:        ProcessTransform(node, TokenType.Code,         TokenType.ValidatedCode,  1.0); break;
-            case NodeType.HostedCompute:
-            case NodeType.UserWorkstation:   ProcessTransform(node, TokenType.ValidatedCode,TokenType.RunningSoftware,1.0); break;
-            case NodeType.Users:             ProcessUsers(node);        break;
-            case NodeType.Support:           ProcessSupport(node);      break;
+            case NodeType.CustomerDiscovery: ProcessCustomerDiscovery(node); break;
+            case NodeType.ProductManagement: ProcessTransform(node, TokenType.Opportunity, TokenType.Feature, 1.0); break;
+            case NodeType.Development:       ProcessDevelopment(node);       break;
+            case NodeType.Quality:           ProcessQuality(node);           break;
+            case NodeType.Operations:        ProcessOperations(node);        break;
+            case NodeType.Support:           ProcessSupport(node);           break;
         }
     }
 
     // ─── Node processors ─────────────────────────────────────────────────────
 
-    /// Market: generates Opportunity tokens based on customer count.
-    private void ProcessMarket(Node node)
+    /// CustomerDiscovery: generates Opportunity from customer base each tick.
+    private void ProcessCustomerDiscovery(Node node)
     {
         double demand = State.CustomerCount * DemandPerCustomer;
         PushOutput(node, TokenType.Opportunity, demand);
@@ -112,25 +107,42 @@ public class SimulationEngine
         node.LastThroughput = produced;
     }
 
-    /// Users: RunningSoftware → Revenue + Incidents.
-    /// Incidents rate rises with TechnicalDebt (proxy for quality).
-    private void ProcessUsers(Node node)
+    private const double BaseDetectionRate = 0.70; // Quality catches 70% of defects by default
+
+    /// Quality: validates Code → ValidatedCode + Defect (detected).
+    /// Escaped defects become Incidents via Operations.
+    private void ProcessQuality(Node node)
     {
-        double work = ConsumeAll(node, TokenType.RunningSoftware);
-        if (work <= 0) return;
+        double code = Consume(node, TokenType.Code, BaseThroughput);
+        if (code <= 0) return;
 
-        double revenue = work * State.CustomerCount * RevenuePerWork;
-        State.Funds           += revenue;
-        State.TotalRevenue    += revenue;
-        State.TotalWorkDelivered += work;
+        double defectDensity   = State.TechnicalDebt / 50_000.0;
+        double totalDefects    = code * defectDensity;
+        double detectedDefects = totalDefects * BaseDetectionRate;
+        double validatedCode   = code - detectedDefects;
 
-        double incidentRate = BaseIncidentRate + State.TechnicalDebt / 50_000.0;
-        double incidents    = work * incidentRate;
-        PushOutput(node, TokenType.Incident, incidents);
-        State.TotalIncidents += incidents;
+        PushOutput(node, TokenType.ValidatedCode, Math.Max(0, validatedCode));
+        if (detectedDefects > 0.0001)
+            PushOutput(node, TokenType.Defect, detectedDefects);
 
-        State.CustomerSatisfaction = Math.Min(1.0, State.CustomerSatisfaction + work * 0.001);
-        node.LastThroughput = work;
+        State.TotalBugsGenerated += totalDefects;
+        node.LastThroughput = code;
+    }
+
+    private const double BaseEscapedDefectRate = 0.05; // 5% of deployed code causes incidents
+
+    /// Operations: deploys ValidatedCode → RunningSoftware + Incidents from escaped defects.
+    private void ProcessOperations(Node node)
+    {
+        double validated = Consume(node, TokenType.ValidatedCode, BaseThroughput);
+        if (validated <= 0) return;
+
+        double incidents = validated * BaseEscapedDefectRate * (1.0 + State.TechnicalDebt / 100_000.0);
+        PushOutput(node, TokenType.RunningSoftware, validated);
+        if (incidents > 0.0001)
+            PushOutput(node, TokenType.Incident, incidents);
+
+        node.LastThroughput = validated;
     }
 
     /// Support: Incident → Defect (back to dev) + Opportunity (recovered demand).
@@ -184,6 +196,10 @@ public class SimulationEngine
 
     // ─── Global metrics ───────────────────────────────────────────────────────
 
+    private const double RevenueRate          = 2.5;   // revenue per RunningSoftware unit per customer
+    private const double BugDiscoveryRate     = 0.05;  // user-found bugs per RunningSoftware unit
+    private const double MarketExpansionRate  = 0.01;  // new opportunities per RunningSoftware unit
+
     private void UpdateGlobalMetrics()
     {
         // Salary burn
@@ -192,5 +208,44 @@ public class SimulationEngine
         // Satisfaction-driven churn
         if (State.CustomerSatisfaction < 0.5)
             State.CustomerCount = Math.Max(0, (int)(State.CustomerCount - State.CustomerCount * 0.01));
+
+        // Users as environment actor: RunningSoftware generates economic signals each tick
+        double totalRunning = State.Nodes
+            .Sum(n => n.Queue.TryGetValue(TokenType.RunningSoftware, out var q) ? q : 0);
+
+        if (totalRunning > 0)
+        {
+            double revenue = totalRunning * State.CustomerCount * RevenueRate;
+            State.Funds           += revenue;
+            State.TotalRevenue    += revenue;
+            State.TotalWorkDelivered += totalRunning;
+
+            // User-discovered bugs feed Support queues
+            double userBugs     = totalRunning * BugDiscoveryRate;
+            var supportNodes    = State.Nodes.Where(n => n.NodeType == NodeType.Support).ToList();
+            int supportCount    = Math.Max(1, supportNodes.Count);
+            foreach (var support in supportNodes)
+            {
+                support.Queue.TryGetValue(TokenType.Incident, out double existing);
+                support.Queue[TokenType.Incident] = existing + userBugs / supportCount;
+            }
+            State.TotalIncidents += userBugs;
+
+            // Running software generates new feature opportunities back to CustomerDiscovery
+            double newOpportunities   = totalRunning * MarketExpansionRate;
+            var discoveryNodes        = State.Nodes.Where(n => n.NodeType == NodeType.CustomerDiscovery).ToList();
+            int discoveryCount        = Math.Max(1, discoveryNodes.Count);
+            foreach (var discovery in discoveryNodes)
+            {
+                discovery.Queue.TryGetValue(TokenType.Opportunity, out double existing);
+                discovery.Queue[TokenType.Opportunity] = existing + newOpportunities / discoveryCount;
+            }
+
+            State.CustomerSatisfaction = Math.Min(1.0, State.CustomerSatisfaction + totalRunning * 0.001);
+
+            // Consume RunningSoftware from node queues (it was sampled above)
+            foreach (var n in State.Nodes)
+                n.Queue.Remove(TokenType.RunningSoftware);
+        }
     }
 }
