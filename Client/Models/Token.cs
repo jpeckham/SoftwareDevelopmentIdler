@@ -9,8 +9,6 @@ public enum TokenType
     RunningSoftware, // Deployed, running software in production
     Defect,          // Quality issue requiring rework
     Incident,        // Production failure requiring ops response
-    TechDebt,        // Accumulated shortcuts slowing future work
-    Revenue,         // Economic output from running software
 }
 
 public class Token

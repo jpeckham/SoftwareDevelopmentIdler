@@ -40,8 +40,6 @@ public static class CanvasLayout
         TokenType.RunningSoftware => "#22c55e",  // green
         TokenType.Defect         => "#f97316",   // orange
         TokenType.Incident       => "#ef4444",   // red
-        TokenType.TechDebt       => "#b91c1c",   // dark red
-        TokenType.Revenue        => "#16a34a",   // dark green
         _ => "#94a3b8"
     };
 }

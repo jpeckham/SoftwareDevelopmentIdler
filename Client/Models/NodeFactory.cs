@@ -42,9 +42,7 @@ public static class NodeFactory
             case NodeType.Development:
                 In(node,  TokenType.Feature,        "Feature");
                 In(node,  TokenType.Defect,         "Defect");
-                In(node,  TokenType.TechDebt,       "Tech Debt");
                 Out(node, TokenType.Code,           "Code");
-                Out(node, TokenType.TechDebt,       "Tech Debt");
                 break;
 
             case NodeType.Quality:

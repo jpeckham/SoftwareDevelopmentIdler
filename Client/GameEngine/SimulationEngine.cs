@@ -100,15 +100,13 @@ public class SimulationEngine
 
         double features = Consume(node, TokenType.Feature,  capacity);
         double rework   = Consume(node, TokenType.Defect,   capacity * 0.5);
-        _               = ConsumeAll(node, TokenType.TechDebt); // consume but don't transform
         double produced = features + rework;
 
         if (produced <= 0) return;
 
         double techDebtAccrued = produced * techDebtRate;
-        State.TechnicalDebt += techDebtAccrued;
-        PushOutput(node, TokenType.Code,     produced);
-        PushOutput(node, TokenType.TechDebt, techDebtAccrued);
+        State.TechnicalDebt += techDebtAccrued; // stored as global engine metric, not a graph token
+        PushOutput(node, TokenType.Code, produced);
         node.LastThroughput = produced;
     }
 

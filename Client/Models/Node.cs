@@ -4,7 +4,7 @@ public enum NodeType
 {
     CustomerDiscovery,  // Generates Opportunity from market demand
     ProductManagement,  // Converts Opportunity → Feature
-    Development,        // Converts Feature + Defect → Code + TechDebt
+    Development,        // Converts Feature + Defect → Code (accrues TechDebt internally)
     Quality,            // Validates Code → ValidatedCode; detects Defects
     Operations,         // Deploys ValidatedCode → RunningSoftware
     Support,            // Routes Incident → Defect + Opportunity
