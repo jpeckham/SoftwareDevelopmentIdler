@@ -156,10 +156,11 @@ public class EngineTests
         for (int i = 0; i < 20; i++)
             engine.ManualTick();
 
-        Assert.True(engine.State.TotalDemandReceived > 0,   "CustomerDiscovery must generate Opportunity");
+        Assert.True(engine.State.TotalDemandReceived > 0,   "Market must generate Opportunity");
         Assert.True(engine.State.TotalWorkDelivered  > 0,   "RunningSoftware must reach users");
         Assert.True(engine.State.TotalRevenue        > 0,   "Revenue must be generated");
         Assert.True(engine.State.TotalIncidents      > 0,   "Incidents must be generated from production");
         Assert.True(engine.State.TechnicalDebt       > 0,   "TechDebt must accumulate during development");
+        Assert.True(engine.State.TotalBugsGenerated  > 0,   "Dev must generate bugs tracking quality issues");
     }
 }
