@@ -145,4 +145,21 @@ public class EngineTests
         // PM should have received demand (it may have already consumed some)
         Assert.True(engine.State.TotalDemandReceived > 0);
     }
+
+    [Fact]
+    public void Golden_Full_Pipeline_Flows_Opportunity_To_Revenue()
+    {
+        // This test must always pass. If it fails, the core feature loop is broken.
+        // Opportunity → Feature → Code → ValidatedCode → RunningSoftware → Revenue
+        var engine = BuildConnectedPipeline();
+
+        for (int i = 0; i < 20; i++)
+            engine.ManualTick();
+
+        Assert.True(engine.State.TotalDemandReceived > 0,   "CustomerDiscovery must generate Opportunity");
+        Assert.True(engine.State.TotalWorkDelivered  > 0,   "RunningSoftware must reach users");
+        Assert.True(engine.State.TotalRevenue        > 0,   "Revenue must be generated");
+        Assert.True(engine.State.TotalIncidents      > 0,   "Incidents must be generated from production");
+        Assert.True(engine.State.TechnicalDebt       > 0,   "TechDebt must accumulate during development");
+    }
 }
