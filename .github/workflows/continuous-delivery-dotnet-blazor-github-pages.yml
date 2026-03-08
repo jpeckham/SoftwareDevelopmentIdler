@@ -24,4 +24,5 @@ jobs:
       version_file: version.json
       coverage_badge_path: .github/badges/coverage.svg
       coverage_pages_subpath: coverage
+      repository_private: ${{ github.event.repository.private }}
     secrets: inherit
