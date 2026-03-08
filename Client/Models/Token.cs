@@ -2,15 +2,15 @@ namespace SoftwareVSM.Client.Models;
 
 public enum TokenType
 {
-    Demand,              // Market → Product Management
-    Features,            // Product Management → Business Analysis (product features to build)
-    UserStories,         // Business Analysis → Development
-    Software,            // Development → Operations
-    DeployableArtifacts, // Operations → HostedCompute / UserWorkstation
-    WorkProduct,         // HostedCompute / UserWorkstation → Users
-    Incidents,           // Users → Support (quality issues)
-    FailureDemand,       // Support → Development (rework)
-    Dissatisfaction,     // Support → Market (shrinks market)
+    Opportunity,     // Market signal: customer demand for value
+    Feature,         // Defined work item ready for development
+    Code,            // Output of development work
+    ValidatedCode,   // Code that has passed quality evaluation
+    RunningSoftware, // Deployed, running software in production
+    Defect,          // Quality issue requiring rework
+    Incident,        // Production failure requiring ops response
+    TechDebt,        // Accumulated shortcuts slowing future work
+    Revenue,         // Economic output from running software
 }
 
 public class Token
