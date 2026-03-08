@@ -59,32 +59,25 @@ public class SimulationEngine
     {
         switch (node.NodeType)
         {
-            case NodeType.Market:            ProcessMarket(node);            break;
-            case NodeType.ProductManagement: ProcessTransform(node, TokenType.Demand,            TokenType.Features,            1.0); break;
-            case NodeType.BusinessAnalysis:  ProcessTransform(node, TokenType.Features,           TokenType.UserStories,         1.0); break;
-            case NodeType.Development:       ProcessDevelopment(node);                            break;
-            case NodeType.Operations:        ProcessTransform(node, TokenType.Software,           TokenType.DeployableArtifacts, 1.0); break;
+            case NodeType.Market:            ProcessMarket(node);       break;
+            case NodeType.ProductManagement: ProcessTransform(node, TokenType.Opportunity, TokenType.Feature,        1.0); break;
+            case NodeType.BusinessAnalysis:  ProcessTransform(node, TokenType.Feature,     TokenType.Feature,        1.0); break;
+            case NodeType.Development:       ProcessDevelopment(node);  break;
+            case NodeType.Operations:        ProcessTransform(node, TokenType.Code,         TokenType.ValidatedCode,  1.0); break;
             case NodeType.HostedCompute:
-            case NodeType.UserWorkstation:   ProcessTransform(node, TokenType.DeployableArtifacts,TokenType.WorkProduct,         1.0); break;
-            case NodeType.Users:             ProcessUsers(node);                                  break;
-            case NodeType.Support:           ProcessSupport(node);                                break;
+            case NodeType.UserWorkstation:   ProcessTransform(node, TokenType.ValidatedCode,TokenType.RunningSoftware,1.0); break;
+            case NodeType.Users:             ProcessUsers(node);        break;
+            case NodeType.Support:           ProcessSupport(node);      break;
         }
     }
 
     // ─── Node processors ─────────────────────────────────────────────────────
 
-    /// Market: generates Demand; Dissatisfaction shrinks the market.
+    /// Market: generates Opportunity tokens based on customer count.
     private void ProcessMarket(Node node)
     {
-        double dissatisfaction = ConsumeAll(node, TokenType.Dissatisfaction);
-        if (dissatisfaction > 0)
-        {
-            int churn = (int)(dissatisfaction * 5);
-            State.CustomerCount = Math.Max(0, State.CustomerCount - churn);
-        }
-
         double demand = State.CustomerCount * DemandPerCustomer;
-        PushOutput(node, TokenType.Demand, demand);
+        PushOutput(node, TokenType.Opportunity, demand);
         State.TotalDemandReceived += demand;
         node.LastThroughput = demand;
     }
@@ -98,54 +91,56 @@ public class SimulationEngine
         node.LastThroughput = consumed;
     }
 
-    /// Development: UserStories + FailureDemand (rework) → Software.
+    /// Development: Feature + Defect (rework) → Code + TechDebt.
     /// Technical debt slows throughput and worsens defect rate.
     private void ProcessDevelopment(Node node)
     {
         double debtPenalty = Math.Max(0.1, 1.0 - State.TechnicalDebt / 10_000.0);
-        double capacity = BaseThroughput * debtPenalty;
+        double capacity    = BaseThroughput * debtPenalty;
 
-        double stories  = Consume(node, TokenType.UserStories,   capacity);
-        double rework   = Consume(node, TokenType.FailureDemand, capacity * 0.5);
-        double produced = stories + rework;
+        double features = Consume(node, TokenType.Feature, capacity);
+        double rework   = Consume(node, TokenType.Defect,  capacity * 0.5);
+        double produced = features + rework;
 
         if (produced <= 0) return;
 
-        State.TechnicalDebt += produced * 0.05;  // coding accrues debt
-        PushOutput(node, TokenType.Software, produced);
+        double techDebtAccrued = produced * 0.05;
+        State.TechnicalDebt += techDebtAccrued;
+        PushOutput(node, TokenType.Code,     produced);
+        PushOutput(node, TokenType.TechDebt, techDebtAccrued);
         State.TotalBugsGenerated += produced * 0.1;
         node.LastThroughput = produced;
     }
 
-    /// Users: WorkProduct → Revenue + Incidents.
+    /// Users: RunningSoftware → Revenue + Incidents.
     /// Incidents rate rises with TechnicalDebt (proxy for quality).
     private void ProcessUsers(Node node)
     {
-        double work = ConsumeAll(node, TokenType.WorkProduct);
+        double work = ConsumeAll(node, TokenType.RunningSoftware);
         if (work <= 0) return;
 
         double revenue = work * State.CustomerCount * RevenuePerWork;
-        State.Funds         += revenue;
-        State.TotalRevenue  += revenue;
+        State.Funds           += revenue;
+        State.TotalRevenue    += revenue;
         State.TotalWorkDelivered += work;
 
         double incidentRate = BaseIncidentRate + State.TechnicalDebt / 50_000.0;
         double incidents    = work * incidentRate;
-        PushOutput(node, TokenType.Incidents, incidents);
+        PushOutput(node, TokenType.Incident, incidents);
         State.TotalIncidents += incidents;
 
         State.CustomerSatisfaction = Math.Min(1.0, State.CustomerSatisfaction + work * 0.001);
         node.LastThroughput = work;
     }
 
-    /// Support: Incidents → FailureDemand (back to dev) + Dissatisfaction (back to market).
+    /// Support: Incident → Defect (back to dev) + Opportunity (recovered demand).
     private void ProcessSupport(Node node)
     {
-        double resolved = Consume(node, TokenType.Incidents, BaseThroughput * 2);
+        double resolved = Consume(node, TokenType.Incident, BaseThroughput * 2);
         if (resolved <= 0) return;
 
-        PushOutput(node, TokenType.FailureDemand,  resolved * 0.6);
-        PushOutput(node, TokenType.Dissatisfaction, resolved * 0.2);
+        PushOutput(node, TokenType.Defect,      resolved * 0.6);
+        PushOutput(node, TokenType.Opportunity, resolved * 0.2);
 
         State.CustomerSatisfaction -= resolved * 0.002;
         State.CustomerSatisfaction  = Math.Max(0.1, State.CustomerSatisfaction);
