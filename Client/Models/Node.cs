@@ -2,15 +2,12 @@ namespace SoftwareVSM.Client.Models;
 
 public enum NodeType
 {
-    Market,
-    ProductManagement,
-    BusinessAnalysis,
-    Development,
-    Operations,
-    HostedCompute,
-    UserWorkstation,
-    Users,
-    Support,
+    CustomerDiscovery,  // Generates Opportunity from market demand
+    ProductManagement,  // Converts Opportunity → Feature
+    Development,        // Converts Feature + Defect → Code + TechDebt
+    Quality,            // Validates Code → ValidatedCode; detects Defects
+    Operations,         // Deploys ValidatedCode → RunningSoftware
+    Support,            // Routes Incident → Defect + Opportunity
 }
 
 public class Node
